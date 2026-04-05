@@ -1,0 +1,314 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  DRIVER
+  SUPERVISOR
+  CITIZEN
+  ADMIN
+}
+
+enum Shift {
+  AM
+  PM
+}
+
+enum BinType {
+  WET
+  DRY
+  MIXED
+}
+
+enum StopStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  BACKLOGGED
+}
+
+enum SkipReason {
+  WASTE_MIXED
+  TRUCK_FULL
+  INACCESSIBLE
+  OTHER
+}
+
+enum VehicleStatus {
+  EN_ROUTE
+  COLLECTING
+  FULL
+  RETURNING_TO_DEPOT
+  IDLE
+}
+
+enum BacklogStatus {
+  PENDING
+  ASSIGNED
+  RESOLVED
+}
+
+enum FineStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  SKIP_ALERT
+  TRUCK_FULL
+  FINE_ISSUED
+  COMPLAINT_UPDATE
+  SYSTEM_ALERT
+  FALSE_CLAIM_ALERT
+  CAPACITY_WARNING
+}
+
+// ─── Models ─────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  role          UserRole
+  name          String
+  mobile        String?   @unique
+  email         String?   @unique
+  password_hash String?
+  is_active     Boolean   @default(true)
+  ward_id       String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  // Relations
+  ward                Ward?          @relation(fields: [ward_id], references: [id])
+  driven_routes       Route[]        @relation("DriverRoutes")
+  supervised_routes   Route[]        @relation("SupervisorRoutes")
+  stop_photos         StopPhoto[]
+  notifications       Notification[] @relation("UserNotifications")
+  approved_fines      FineEvent[]    @relation("AdminFines")
+  audit_logs          AuditLog[]
+  society_memberships SocietyMember[]
+
+  @@map("users")
+}
+
+model Ward {
+  id         String  @id @default(uuid())
+  name       String  @unique
+  zone       String
+  area_sq_km Float?
+
+  // Relations
+  routes    Route[]
+  societies Society[]
+  users     User[]
+
+  @@map("wards")
+}
+
+model Vehicle {
+  id              String  @id @default(uuid())
+  registration_no String  @unique
+  capacity_kg     Int
+  vehicle_type    String? @default("compactor")
+  is_active       Boolean @default(true)
+
+  // Relations
+  routes    Route[]
+  telemetry VehicleTelemetry[]
+
+  @@map("vehicles")
+}
+
+model Route {
+  id            String   @id @default(uuid())
+  ward_id       String
+  vehicle_id    String
+  driver_id     String
+  supervisor_id String?
+  shift         Shift
+  date          DateTime @default(now()) @db.Date
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+
+  // Relations
+  ward           Ward          @relation(fields: [ward_id], references: [id])
+  vehicle        Vehicle       @relation(fields: [vehicle_id], references: [id])
+  driver         User          @relation("DriverRoutes", fields: [driver_id], references: [id])
+  supervisor     User?         @relation("SupervisorRoutes", fields: [supervisor_id], references: [id])
+  stops          Stop[]
+  backlog_entries BacklogEntry[] @relation("NewRouteBacklogs")
+
+  @@map("routes")
+}
+
+model Society {
+  id             String  @id @default(uuid())
+  ward_id        String
+  name           String
+  address        String
+  lat            Float
+  lng            Float
+  contact_name   String?
+  contact_mobile String?
+  wallet_balance Float   @default(10000)
+
+  // Relations
+  ward          Ward            @relation(fields: [ward_id], references: [id])
+  stops         Stop[]
+  fine_events   FineEvent[]
+  notifications Notification[]  @relation("SocietyNotifications")
+  members       SocietyMember[]
+
+  @@map("societies")
+}
+
+model SocietyMember {
+  id         String @id @default(uuid())
+  user_id    String
+  society_id String
+
+  user    User    @relation(fields: [user_id], references: [id])
+  society Society @relation(fields: [society_id], references: [id])
+
+  @@unique([user_id, society_id])
+  @@map("society_members")
+}
+
+model Stop {
+  id             String      @id @default(uuid())
+  route_id       String
+  society_id     String?
+  address        String
+  lat            Float
+  lng            Float
+  bin_type       BinType     @default(MIXED)
+  sequence_order Int
+  status         StopStatus  @default(PENDING)
+  skip_reason    SkipReason?
+  skipped_at     DateTime?
+  completed_at   DateTime?
+  created_at     DateTime    @default(now())
+
+  // Relations
+  route          Route          @relation(fields: [route_id], references: [id])
+  society        Society?       @relation(fields: [society_id], references: [id])
+  photos         StopPhoto[]
+  backlog_entries BacklogEntry[]
+  fine_events    FineEvent[]
+
+  @@map("stops")
+}
+
+model StopPhoto {
+  id             String   @id @default(uuid())
+  stop_id        String
+  driver_id      String
+  url            String
+  lat            Float
+  lng            Float
+  taken_at       DateTime @default(now())
+  geofence_valid Boolean  @default(false)
+
+  // Relations
+  stop   Stop @relation(fields: [stop_id], references: [id])
+  driver User @relation(fields: [driver_id], references: [id])
+
+  @@map("stop_photos")
+}
+
+model VehicleTelemetry {
+  id              String        @id @default(uuid())
+  vehicle_id      String
+  lat             Float
+  lng             Float
+  current_load_kg Int           @default(0)
+  status          VehicleStatus @default(EN_ROUTE)
+  recorded_at     DateTime      @default(now())
+
+  // Relations
+  vehicle Vehicle @relation(fields: [vehicle_id], references: [id])
+
+  @@index([vehicle_id, recorded_at(sort: Desc)])
+  @@map("vehicle_telemetry")
+}
+
+model BacklogEntry {
+  id               String        @id @default(uuid())
+  original_stop_id String
+  new_route_id     String?
+  reason           String
+  status           BacklogStatus @default(PENDING)
+  created_at       DateTime      @default(now())
+  resolved_at      DateTime?
+
+  // Relations
+  original_stop Stop   @relation(fields: [original_stop_id], references: [id])
+  new_route     Route? @relation("NewRouteBacklogs", fields: [new_route_id], references: [id])
+
+  @@map("backlog_entries")
+}
+
+model FineEvent {
+  id         String     @id @default(uuid())
+  society_id String
+  stop_id    String?
+  reason     String
+  amount     Float      @default(500)
+  status     FineStatus @default(PENDING)
+  admin_id   String?
+  notes      String?
+  created_at DateTime   @default(now())
+
+  // Relations
+  society Society @relation(fields: [society_id], references: [id])
+  stop    Stop?   @relation(fields: [stop_id], references: [id])
+  admin   User?   @relation("AdminFines", fields: [admin_id], references: [id])
+
+  @@map("fine_events")
+}
+
+model Notification {
+  id                String           @id @default(uuid())
+  target_user_id    String?
+  target_society_id String?
+  type              NotificationType
+  title             String
+  body              String
+  sent_at           DateTime         @default(now())
+  read_at           DateTime?
+
+  // Relations
+  target_user    User?    @relation("UserNotifications", fields: [target_user_id], references: [id])
+  target_society Society? @relation("SocietyNotifications", fields: [target_society_id], references: [id])
+
+  @@index([target_user_id, sent_at(sort: Desc)])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actor_id    String?
+  action      String
+  entity_type String
+  entity_id   String
+  old_value   Json?
+  new_value   Json?
+  created_at  DateTime @default(now())
+
+  // Relations
+  actor User? @relation(fields: [actor_id], references: [id])
+
+  @@index([entity_type, entity_id])
+  @@map("audit_logs")
+}
