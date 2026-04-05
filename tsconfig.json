@@ -1,0 +1,11 @@
+{
+  "extends": "./apps/mobile/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./apps/mobile"
+  },
+  "include": [
+    "./apps/mobile/**/*.ts",
+    "./apps/mobile/**/*.tsx",
+    "./apps/mobile/.expo/types/**/*.d.ts"
+  ]
+}
