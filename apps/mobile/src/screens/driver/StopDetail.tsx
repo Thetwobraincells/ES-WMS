@@ -38,7 +38,7 @@ import type { NativeStackNavigationProp, RouteProp } from '@react-navigation/nat
 import { Colors, Theme } from '../../theme/colors';
 import StatusBadge from '../../components/StatusBadge';
 import BigButton   from '../../components/BigButton';
-import type { DriverRouteStackParams } from '../../navigation/DriverStack';
+import type { DriverRootStackParams, DriverRouteStackParams } from '../../navigation/DriverStack';
 
 // ─── Mock stop data lookup ────────────────────────────────────────────────────
 
@@ -76,8 +76,8 @@ const MOCK_STOPS: Record<string, {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type NavProp   = NativeStackNavigationProp<DriverRouteStackParams, 'StopDetail'>;
-type RoutePropT = RouteProp<DriverRouteStackParams, 'StopDetail'>;
+type NavProp   = NativeStackNavigationProp<DriverRootStackParams, 'StopDetail'>;
+type RoutePropT = RouteProp<DriverRootStackParams, 'StopDetail'>;
 
 // ─── Volume Fill Bar ──────────────────────────────────────────────────────────
 

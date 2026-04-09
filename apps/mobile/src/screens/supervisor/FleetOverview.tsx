@@ -223,10 +223,22 @@ function RouteCard({ route, onPress }: { route: ActiveRoute; onPress: () => void
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(barAnim,  { toValue: progress, duration: 700, delay: 200, useNativeDriver: false }),
-      Animated.timing(fadeAnim, { toValue: 1,        duration: 350,             useNativeDriver: true  }),
-    ]).start();
+    // ⚠ MUST be separate — barAnim animates width (layout, JS driver only).
+    // fadeAnim animates opacity (native driver OK).
+    // Mixing them in Animated.parallel() causes the
+    // "node moved to native" crash because parallel enforces a single driver.
+    Animated.timing(fadeAnim, {
+      toValue:         1,
+      duration:        350,
+      useNativeDriver: true,   // ✅ opacity — native OK
+    }).start();
+
+    Animated.timing(barAnim, {
+      toValue:         progress,
+      duration:        700,
+      delay:           200,
+      useNativeDriver: false,  // ✅ width (layout) — must be JS driver
+    }).start();
   }, []);
 
   const loadColor =

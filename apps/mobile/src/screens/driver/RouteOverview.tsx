@@ -212,7 +212,7 @@ const stopS = StyleSheet.create({
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
-type NavProp = NativeStackNavigationProp<DriverRouteStackParams, 'RouteOverview'>;
+type NavProp = NativeStackNavigationProp<DriverRouteStackParams, 'DriverTabs'>;
 
 export default function RouteOverview() {
   const insets     = useSafeAreaInsets();
