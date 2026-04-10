@@ -228,14 +228,26 @@ function AuditCard({
   onReassign:    (id: string) => void;
 }) {
   const [resolved, setResolved] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const heightAnim = useRef(new Animated.Value(1)).current;
+  // Both fadeAnim and scaleAnim drive transform/opacity props — fully native safe.
+  const fadeAnim  = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const resolveCard = (action: () => void) => {
     action();
+    // ✅ Both use useNativeDriver: true — opacity and scaleY are transform props.
+    // No layout properties (width/height/padding) are animated here.
     Animated.parallel([
-      Animated.timing(fadeAnim,   { toValue: 0, duration: 300, useNativeDriver: true }),
-      Animated.timing(heightAnim, { toValue: 0, duration: 350, delay: 250, useNativeDriver: false }),
+      Animated.timing(fadeAnim, {
+        toValue:         0,
+        duration:        300,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue:         0,
+        duration:        350,
+        delay:           150,
+        useNativeDriver: true,
+      }),
     ]).start(() => setResolved(true));
   };
 
@@ -247,9 +259,9 @@ function AuditCard({
 
   return (
     <Animated.View style={{
-      opacity:   fadeAnim,
-      transform: [{ scaleY: heightAnim }],
-      marginBottom: 12,
+      opacity:        fadeAnim,
+      transform:      [{ scaleY: scaleAnim }],
+      marginBottom:   12,
     }}>
       <View style={[
         acS.card,
