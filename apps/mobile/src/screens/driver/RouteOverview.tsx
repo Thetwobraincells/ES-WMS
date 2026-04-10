@@ -1,18 +1,18 @@
 // File: es-wms/apps/mobile/src/screens/driver/RouteOverview.tsx
 
 /**
- * RouteOverview — Driver Dashboard (Screen 1 reference)
+ * RouteOverview — Driver Dashboard
  *
- * Sections (top → bottom):
- *   1. App header: ES-WMS logo | driver name + shift | alert icon
- *   2. Route Progress card: "14/40 Stops Completed" + animated progress bar
- *   3. Vehicle Load card: circular SVG gauge (84% FULL) + vehicle ID
- *   4. "Did you know?" eco tip banner (dismissible)
- *   5. "Up Next" section: IN_PROGRESS stop + PENDING next stops
- *   6. Map preview strip with "View Full Route Map" CTA
+ * Wired to the live backend via useRouteStore.
+ * Fetches the driver's current shift route on mount and displays:
+ *   1. Route Progress card with animated progress bar
+ *   2. Vehicle Load gauge (SVG)
+ *   3. Eco tip banner (dismissible)
+ *   4. "Up Next" stop list — PENDING / IN_PROGRESS stops
+ *   5. Map strip placeholder
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,52 +32,19 @@ import Svg, { Circle } from 'react-native-svg';
 import { Colors, Theme } from '../../theme/colors';
 import StatusBadge from '../../components/StatusBadge';
 import BigButton   from '../../components/BigButton';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore }  from '../../stores/authStore';
+import { useRouteStore } from '../../stores/routeStore';
 import type { DriverRouteStackParams } from '../../navigation/DriverStack';
+import type { Stop } from '../../types/api';
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Eco tips (rotate randomly) ───────────────────────────────────────────────
 
-const MOCK_ROUTE = {
-  totalStops:     40,
-  completedStops: 14,
-  shiftType:      'MORNING SHIFT',
-  vehicle: {
-    id:          'TRUCK-4029',
-    loadKg:      4200,
-    capacityKg:  5000,
-    loadPercent: 84,
-  },
-  upNext: [
-    {
-      id:       'stop-001',
-      status:   'in_progress' as const,
-      society:  'Crystal Heights',
-      address:  'Worli Sea Face, Mumbai 400018',
-      binType:  'wet'  as const,
-      distance: null,
-      binId:    'CH-402-B',
-    },
-    {
-      id:       'stop-002',
-      status:   'pending' as const,
-      society:  'Oceanic View',
-      address:  'Bandra West, Mumbai 400050',
-      binType:  'dry' as const,
-      distance: '1.2KM',
-      binId:    'OV-201-A',
-    },
-    {
-      id:       'stop-003',
-      status:   'pending' as const,
-      society:  'Sea Breeze CHS',
-      address:  'Andheri West, Mumbai 400058',
-      binType:  'mixed' as const,
-      distance: '2.8KM',
-      binId:    'SB-114-C',
-    },
-  ],
-  ecoTip: 'Segregating waste at source helps keep Mumbai healthy and reduces landfill overflow.',
-};
+const ECO_TIPS = [
+  'Segregating waste at source helps keep Mumbai healthy and reduces landfill overflow.',
+  'Composting wet waste can reduce a society\'s solid waste output by up to 60%.',
+  'India generates 62 million tonnes of waste annually. Your work keeps cities clean!',
+  'Dry waste like paper and plastic can be recycled up to 7 times.',
+];
 
 // ─── Circular Load Gauge ──────────────────────────────────────────────────────
 
@@ -132,7 +101,7 @@ const gaugeS = StyleSheet.create({
 function StopCard({
   stop, isActive, onPress, onNavigate,
 }: {
-  stop: typeof MOCK_ROUTE.upNext[0];
+  stop: Stop;
   isActive: boolean;
   onPress: () => void;
   onNavigate: () => void;
@@ -142,6 +111,10 @@ function StopCard({
     Animated.timing(fade, { toValue: 1, duration: 350, delay: isActive ? 0 : 120, useNativeDriver: true }).start();
   }, []);
 
+  const statusLabel = isActive
+    ? 'IN PROGRESS'
+    : `PENDING · #${stop.sequence_order}`;
+
   return (
     <Animated.View style={{ opacity: fade }}>
       <View style={[stopS.card, isActive && stopS.cardActive]}>
@@ -149,7 +122,7 @@ function StopCard({
         <View style={stopS.header}>
           <StatusBadge
             variant={isActive ? 'in_progress' : 'pending'}
-            label={isActive ? 'IN PROGRESS' : stop.distance ? `PENDING · ${stop.distance} AWAY` : 'PENDING'}
+            label={statusLabel}
             size="sm"
           />
           <View style={stopS.buildingIcon}>
@@ -157,7 +130,7 @@ function StopCard({
           </View>
         </View>
 
-        <Text style={stopS.name}>{stop.society}</Text>
+        <Text style={stopS.name}>{stop.society?.name ?? 'Society'}</Text>
         <Text style={stopS.addr}>{stop.address}</Text>
 
         {/* Action row */}
@@ -173,7 +146,7 @@ function StopCard({
             </>
           ) : (
             <>
-              <BigButton label="Start Visit" icon="play"
+              <BigButton label="View Details" icon="eye"
                 onPress={onPress} variant="dark" compact style={stopS.flex1} />
               <TouchableOpacity style={[stopS.iconBtn, { backgroundColor: Colors.surfaceGrey }]}
                 onPress={() => {}} hitSlop={{ top:8,bottom:8,left:8,right:8 }}>
@@ -218,14 +191,69 @@ export default function RouteOverview() {
   const insets     = useSafeAreaInsets();
   const navigation = useNavigation<NavProp>();
   const user       = useAuthStore(s => s.user);
+
+  // ── Route store ───────────────────────────────────────────────────────────
+  const { stops, progress, vehicle, route, isLoading, error, fetchMyRoute } = useRouteStore();
+
   const [tipVisible, setTipVisible] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [ecoTip]     = useState(() => ECO_TIPS[Math.floor(Math.random() * ECO_TIPS.length)]);
 
-  const progress  = MOCK_ROUTE.completedStops / MOCK_ROUTE.totalStops;
-  const barAnim   = useRef(new Animated.Value(0)).current;
-
+  // Fetch route on mount
   useEffect(() => {
-    Animated.timing(barAnim, { toValue: progress, duration: 900, delay: 300, useNativeDriver: false }).start();
+    fetchMyRoute();
   }, []);
+
+  // Pull-to-refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchMyRoute();
+    setRefreshing(false);
+  }, [fetchMyRoute]);
+
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const completed = progress?.completed ?? 0;
+  const total     = progress?.total ?? 0;
+  const pending   = progress?.pending ?? 0;
+  const pct       = total > 0 ? completed / total : 0;
+
+  // Filter to non-completed stops, sorted by sequence_order
+  const upcomingStops = stops
+    .filter(s => s.status === 'PENDING' || s.status === 'IN_PROGRESS')
+    .sort((a, b) => a.sequence_order - b.sequence_order);
+
+  const loadPercent = vehicle ? Math.round(((vehicle.capacity_kg - 1000) / vehicle.capacity_kg) * 100) : 0;
+  const shiftLabel  = route?.shift === 'AM' ? 'MORNING SHIFT' : route?.shift === 'PM' ? 'EVENING SHIFT' : 'SHIFT';
+
+  // ── Animated progress bar ─────────────────────────────────────────────────
+  const barAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(barAnim, { toValue: pct, duration: 900, delay: 300, useNativeDriver: false }).start();
+  }, [pct]);
+
+  // ── Loading state ─────────────────────────────────────────────────────────
+  if (isLoading && !route) {
+    return (
+      <View style={[s.root, s.centered, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={Colors.green} />
+        <Text style={s.loadingText}>Loading route…</Text>
+      </View>
+    );
+  }
+
+  // ── Error / No route state ────────────────────────────────────────────────
+  if (!route && !isLoading) {
+    return (
+      <View style={[s.root, s.centered, { paddingTop: insets.top }]}>
+        <Ionicons name="alert-circle-outline" size={48} color={Colors.warning} />
+        <Text style={s.emptyTitle}>No Route Assigned</Text>
+        <Text style={s.emptyText}>
+          {error ?? 'You don\'t have an active route for this shift. Contact your supervisor.'}
+        </Text>
+        <BigButton label="Retry" icon="refresh" onPress={fetchMyRoute} variant="primary" style={{ marginTop: 16 }} />
+      </View>
+    );
+  }
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
@@ -238,7 +266,7 @@ export default function RouteOverview() {
           </View>
           <View>
             <Text style={s.appName}>ES-WMS</Text>
-            <Text style={s.headerSub}>{user?.name ?? 'Driver'} · {MOCK_ROUTE.shiftType}</Text>
+            <Text style={s.headerSub}>{user?.name ?? 'Driver'} · {shiftLabel}</Text>
           </View>
         </View>
         <TouchableOpacity style={s.alertBtn} hitSlop={{ top:8,bottom:8,left:8,right:8 }}>
@@ -248,14 +276,17 @@ export default function RouteOverview() {
 
       <ScrollView style={s.scroll}
         contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 80 }]}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />
+        }>
 
         {/* ── Progress Card ── */}
         <View style={s.card}>
           <Text style={s.sectionLabel}>ROUTE PROGRESS</Text>
           <View style={s.countRow}>
-            <Text style={s.countBig}>{MOCK_ROUTE.completedStops}</Text>
-            <Text style={s.countOf}>/{MOCK_ROUTE.totalStops}</Text>
+            <Text style={s.countBig}>{completed}</Text>
+            <Text style={s.countOf}>/{total}</Text>
           </View>
           <Text style={s.countSub}>Stops Completed</Text>
           <View style={s.barTrack}>
@@ -263,37 +294,39 @@ export default function RouteOverview() {
               width: barAnim.interpolate({ inputRange: [0,1], outputRange: ['0%','100%'] }),
             }]} />
             <View style={s.barLabel}>
-              <Text style={s.barLabelText}>{Math.round(progress * 100)}% TOTAL</Text>
+              <Text style={s.barLabelText}>{Math.round(pct * 100)}% TOTAL</Text>
             </View>
           </View>
         </View>
 
         {/* ── Vehicle Load Card ── */}
-        <View style={s.loadCard}>
-          <Text style={s.loadLabel}>VEHICLE LOAD</Text>
-          <LoadGauge
-            percent={MOCK_ROUTE.vehicle.loadPercent}
-            loadKg={MOCK_ROUTE.vehicle.loadKg}
-            capacity={MOCK_ROUTE.vehicle.capacityKg}
-          />
-          <View style={s.vehicleRow}>
-            <Ionicons name="bus" size={16} color={Colors.textOnDarkMuted} />
-            <Text style={s.vehicleId}>{MOCK_ROUTE.vehicle.id}</Text>
-          </View>
-          <Text style={s.loadDetail}>
-            {MOCK_ROUTE.vehicle.loadKg.toLocaleString()} kg / {MOCK_ROUTE.vehicle.capacityKg.toLocaleString()} kg
-          </Text>
-          {MOCK_ROUTE.vehicle.loadPercent >= 75 && (
-            <View style={s.warnRow}>
-              <Ionicons name="warning" size={14} color={Colors.warning} />
-              <Text style={s.warnText}>
-                {MOCK_ROUTE.vehicle.loadPercent >= 90
-                  ? 'Truck approaching capacity — 1–2 stops remaining'
-                  : 'High load — monitor remaining capacity'}
-              </Text>
+        {vehicle && (
+          <View style={s.loadCard}>
+            <Text style={s.loadLabel}>VEHICLE LOAD</Text>
+            <LoadGauge
+              percent={loadPercent}
+              loadKg={vehicle.capacity_kg - 1000}
+              capacity={vehicle.capacity_kg}
+            />
+            <View style={s.vehicleRow}>
+              <Ionicons name="bus" size={16} color={Colors.textOnDarkMuted} />
+              <Text style={s.vehicleId}>{vehicle.registration_no}</Text>
             </View>
-          )}
-        </View>
+            <Text style={s.loadDetail}>
+              {vehicle.capacity_kg.toLocaleString()} kg capacity
+            </Text>
+            {loadPercent >= 75 && (
+              <View style={s.warnRow}>
+                <Ionicons name="warning" size={14} color={Colors.warning} />
+                <Text style={s.warnText}>
+                  {loadPercent >= 90
+                    ? 'Truck approaching capacity — 1–2 stops remaining'
+                    : 'High load — monitor remaining capacity'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ── Eco Tip ── */}
         {tipVisible && (
@@ -303,7 +336,7 @@ export default function RouteOverview() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.tipTitle}>Did you know?</Text>
-              <Text style={s.tipBody}>{MOCK_ROUTE.ecoTip}</Text>
+              <Text style={s.tipBody}>{ecoTip}</Text>
             </View>
             <TouchableOpacity onPress={() => setTipVisible(false)}
               hitSlop={{ top:8,bottom:8,left:8,right:8 }}>
@@ -316,16 +349,24 @@ export default function RouteOverview() {
         <View style={s.upNextRow}>
           <Text style={s.upNextTitle}>Up Next</Text>
           <View style={s.pendingPill}>
-            <Text style={s.pendingText}>{MOCK_ROUTE.totalStops - MOCK_ROUTE.completedStops} PENDING</Text>
+            <Text style={s.pendingText}>{pending} PENDING</Text>
           </View>
         </View>
 
-        {MOCK_ROUTE.upNext.map(stop => (
-          <StopCard key={stop.id} stop={stop}
-            isActive={stop.status === 'in_progress'}
-            onPress={() => navigation.navigate('StopDetail', { stopId: stop.id })}
-            onNavigate={() => {}} />
-        ))}
+        {upcomingStops.length === 0 ? (
+          <View style={s.emptyCard}>
+            <Ionicons name="checkmark-done-circle" size={36} color={Colors.green} />
+            <Text style={s.emptyCardTitle}>All Stops Completed!</Text>
+            <Text style={s.emptyCardText}>Great work. All societies on this route have been serviced.</Text>
+          </View>
+        ) : (
+          upcomingStops.map(stop => (
+            <StopCard key={stop.id} stop={stop}
+              isActive={stop.status === 'IN_PROGRESS'}
+              onPress={() => navigation.navigate('StopDetail', { stopId: stop.id })}
+              onNavigate={() => {}} />
+          ))
+        )}
 
         {/* ── Map Strip ── */}
         <TouchableOpacity style={s.mapStrip} activeOpacity={0.85}>
@@ -349,6 +390,16 @@ const s = StyleSheet.create({
   root:    { flex: 1, backgroundColor: Colors.background },
   scroll:  { flex: 1 },
   content: { padding: 16, gap: 12 },
+  centered: { justifyContent: 'center', alignItems: 'center', padding: 32 },
+
+  // Loading / empty
+  loadingText: { fontSize: 14, color: Colors.textSecondary, marginTop: 12 },
+  emptyTitle:  { fontSize: 22, fontWeight: '800', color: Colors.textPrimary, marginTop: 16 },
+  emptyText:   { fontSize: 14, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  emptyCard:   { backgroundColor: Colors.surface, borderRadius: Theme.radiusMd, padding: 24,
+                 alignItems: 'center', borderWidth: 1, borderColor: Colors.border, gap: 8 },
+  emptyCardTitle: { fontSize: 18, fontWeight: '700', color: Colors.green },
+  emptyCardText:  { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
 
   // Header
   header:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

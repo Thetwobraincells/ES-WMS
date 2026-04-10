@@ -31,25 +31,20 @@ import {
   Alert,
   Platform,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { NativeStackNavigationProp, RouteProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 
 import { Colors, Theme } from '../../theme/colors';
 import type { DriverRouteStackParams } from '../../navigation/DriverStack';
+import { useRouteStore } from '../../stores/routeStore';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-
-// ─── Mock stop context ────────────────────────────────────────────────────────
-
-const MOCK_STOP_CONTEXT: Record<string, { society: string; wasteType: string }> = {
-  'stop-001': { society: 'Crystal Heights', wasteType: 'WET WASTE' },
-  'stop-002': { society: 'Oceanic View',    wasteType: 'DRY WASTE' },
-  'stop-003': { society: 'Sea Breeze CHS',  wasteType: 'MIXED WASTE' },
-};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -158,7 +153,13 @@ export default function CameraProof() {
   const route      = useRoute<RoutePropT>();
 
   const stopId   = route.params?.stopId ?? 'stop-001';
-  const context  = MOCK_STOP_CONTEXT[stopId] ?? MOCK_STOP_CONTEXT['stop-001'];
+  
+  // Use real data from routeStore
+  const stops       = useRouteStore(s => s.stops);
+  const uploadPhoto = useRouteStore(s => s.uploadPhoto);
+  const completeStop = useRouteStore(s => s.completeStop);
+  
+  const stop = stops.find(s => s.id === stopId);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [flashOn,    setFlashOn]        = useState(false);
@@ -191,7 +192,7 @@ export default function CameraProof() {
       return;
     }
 
-    if (!cameraRef.current || capturing) return;
+    if (!cameraRef.current || capturing || !stop) return;
 
     // Button press animation
     Animated.sequence([
@@ -207,12 +208,23 @@ export default function CameraProof() {
         exif:        true,
         skipProcessing: Platform.OS === 'android',
       });
-      // Phase 3: upload photo to S3 with geotag metadata
-      // For now navigate back with success
-      navigation.goBack();
-      Alert.alert('Photo Captured', 'Proof of work saved. Stop marked as complete.', [{ text: 'Great!' }]);
-    } catch (err) {
-      Alert.alert('Capture Failed', 'Could not take photo. Please try again.');
+      
+      if (photo?.uri) {
+        // Upload photo with simulated GPS coordinates
+        await uploadPhoto(stop.id, photo.uri, stop.lat, stop.lng);
+        // Mark stop as complete
+        await completeStop(stop.id);
+        
+        // Go back (might go back to route overview or stop detail)
+        navigation.goBack();
+        navigation.goBack(); // go back twice to get out of stop detail to route overview
+        Alert.alert('Success', 'Proof of work saved. Stop marked as complete.', [{ text: 'Great!' }]);
+      } else {
+         throw new Error("Unable to capture Image");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not upload photo. Please try again.';
+      Alert.alert('Capture Failed', msg);
     } finally {
       setCapturing(false);
     }
@@ -222,6 +234,7 @@ export default function CameraProof() {
   if (!permission) {
     return (
       <View style={permS.root}>
+        <ActivityIndicator color={Colors.navyDark} />
         <Text style={permS.text}>Checking camera permission…</Text>
       </View>
     );
@@ -300,14 +313,14 @@ export default function CameraProof() {
         {/* Location banner */}
         <View style={s.locationBanner}>
           <Text style={s.locationLabel}>LOCATION</Text>
-          <Text style={s.locationValue}>{context.society}</Text>
+          <Text style={s.locationValue}>{stop?.society?.name ?? 'Unknown Society'}</Text>
         </View>
 
         {/* Content type banner */}
         <View style={s.contentBanner}>
           <View>
             <Text style={s.contentLabel}>CONTENT TYPE</Text>
-            <Text style={s.contentValue}>{context.wasteType}</Text>
+            <Text style={s.contentValue}>{stop?.bin_type ?? 'UNKNOWN'}</Text>
           </View>
           <Text style={s.alignHint}>ALIGN BIN TO CENTER</Text>
         </View>

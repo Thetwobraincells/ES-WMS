@@ -10,6 +10,8 @@ import {
   createUserSchema,
   updateUserSchema,
 } from "../controllers/admin.controller";
+import { getDashboardSummary, listWards } from "../controllers/dashboard.controller";
+import { listSocieties } from "../controllers/society.controller";
 import { UserRole } from "@prisma/client";
 
 const router = Router();
@@ -25,4 +27,14 @@ router.patch("/users/:id", validate(updateUserSchema), updateUser);
 // ── Mass Balance ────────────────────────────────────────────────────────────
 router.get("/mass-balance", getMassBalance);
 
+// GET /api/v1/admin/dashboard — Aggregated dashboard summary
+router.get("/dashboard", getDashboardSummary);
+
+// GET /api/v1/admin/wards — List all wards
+router.get("/wards", listWards);
+
+// GET /api/v1/admin/societies — List all societies
+router.get("/societies", listSocieties);
+
 export default router;
+``

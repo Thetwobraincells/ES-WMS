@@ -100,7 +100,9 @@ export default function LoginScreen() {
   const isLoading   = useAuthStore(s => s.isLoading);
   const error       = useAuthStore(s => s.error);
   const clearError  = useAuthStore(s => s.clearError);
-  const otpRequestId = useAuthStore(s => s.otpRequestId);
+  const otpSent     = useAuthStore(s => s.otpSent);
+  const resetOtpSent= useAuthStore(s => s.resetOtpSent);
+  const devOtp      = useAuthStore(s => s.devOtp);
 
   // ── Transition animation ───────────────────────────────────────────────────
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -124,10 +126,10 @@ export default function LoginScreen() {
 
   // ── Watch for successful OTP request ──────────────────────────────────────
   useEffect(() => {
-    if (otpRequestId && step === 'mobile') {
+    if (otpSent && step === 'mobile') {
       transitionToOtp();
     }
-  }, [otpRequestId, step, transitionToOtp]);
+  }, [otpSent, step, transitionToOtp]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -147,6 +149,7 @@ export default function LoginScreen() {
   const handleBack = () => {
     setOtp('');
     setStep('mobile');
+    resetOtpSent();
     clearError();
     setTimeout(() => mobileInputRef.current?.focus(), 100);
   };
@@ -251,14 +254,7 @@ export default function LoginScreen() {
                   <View style={styles.hintBox}>
                     <Ionicons name="information-circle-outline" size={16} color={Colors.statusProgress} />
                     <Text style={styles.hintText}>
-                      Prototype: any 10-digit number • OTP is{' '}
-                      <Text style={styles.hintCode}>123456</Text>
-                    </Text>
-                  </View>
-                  <View style={styles.hintBox}>
-                    <Ionicons name="people-outline" size={16} color={Colors.statusProgress} />
-                    <Text style={styles.hintText}>
-                      Role by last digit: 1=Driver, 2=Supervisor, 3=Citizen
+                      Use a seeded mobile number (e.g. 9222000001 for Driver, 9333000001 for Citizen). Check server console for OTP.
                     </Text>
                   </View>
                 </View>
@@ -281,33 +277,31 @@ export default function LoginScreen() {
                     <Text style={styles.mobileHighlight}>+91 {mobile}</Text>
                   </Text>
 
-                  {/* OTP cells (visual) */}
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={() => otpInputRef.current?.focus()}
-                    style={styles.otpRow}
-                  >
-                    {Array.from({ length: OTP_LENGTH }).map((_, i) => (
-                      <OtpCell
-                        key={i}
-                        char={otp[i] ?? ''}
-                        isFocused={otpFocus && otp.length === i}
-                      />
-                    ))}
-                  </TouchableOpacity>
+                  {/* OTP cells (visual) and hidden input overlay */}
+                  <View style={styles.otpWrapper}>
+                    <View style={styles.otpRow}>
+                      {Array.from({ length: OTP_LENGTH }).map((_, i) => (
+                        <OtpCell
+                          key={i}
+                          char={otp[i] ?? ''}
+                          isFocused={otpFocus && otp.length === i}
+                        />
+                      ))}
+                    </View>
 
-                  {/* Hidden actual OTP input */}
-                  <TextInput
-                    ref={otpInputRef}
-                    style={styles.hiddenInput}
-                    value={otp}
-                    onChangeText={handleOtpChange}
-                    keyboardType="number-pad"
-                    maxLength={OTP_LENGTH}
-                    onFocus={() => setOtpFocus(true)}
-                    onBlur={() => setOtpFocus(false)}
-                    caretHidden
-                  />
+                    <TextInput
+                      ref={otpInputRef}
+                      style={styles.hiddenInputOverlay}
+                      value={otp}
+                      onChangeText={handleOtpChange}
+                      keyboardType="number-pad"
+                      maxLength={OTP_LENGTH}
+                      onFocus={() => setOtpFocus(true)}
+                      onBlur={() => setOtpFocus(false)}
+                      autoFocus
+                      caretHidden
+                    />
+                  </View>
 
                   {/* Resend */}
                   <TouchableOpacity
@@ -590,11 +584,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
   },
+  otpWrapper: {
+    position: 'relative',
+    marginBottom: 16,
+    marginTop: 8,
+  },
   otpRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
-    marginTop: 8,
   },
   otpCell: {
     width: 46,
@@ -620,11 +617,11 @@ const styles = StyleSheet.create({
     color: Colors.white,
     textAlign: 'center',
   },
-  hiddenInput: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
+  hiddenInputOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.01,
+    color: 'transparent',
+    fontSize: 1, // Minimize visible artifacts
   },
   resendButton: {
     flexDirection: 'row',

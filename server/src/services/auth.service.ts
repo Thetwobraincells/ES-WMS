@@ -62,6 +62,16 @@ export async function verifyOtpAndLogin(mobile: string, otp: string) {
     throw new AuthError("Your account has been deactivated. Contact admin.", "USER_DEACTIVATED");
   }
 
+  // For CITIZEN users, fetch their society membership
+  let society_id: string | null = null;
+  if (user.role === UserRole.CITIZEN) {
+    const membership = await prisma.societyMember.findFirst({
+      where: { user_id: user.id },
+      select: { society_id: true },
+    });
+    society_id = membership?.society_id ?? null;
+  }
+
   const token = signToken(user.id, user.role, "mobile");
 
   return {
@@ -71,6 +81,8 @@ export async function verifyOtpAndLogin(mobile: string, otp: string) {
       name: user.name,
       role: user.role,
       mobile: user.mobile,
+      ward_id: user.ward_id,
+      society_id,
     },
   };
 }
