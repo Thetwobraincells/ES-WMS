@@ -2,7 +2,7 @@
  * Stop API service — complete, skip, and upload photo for stops.
  */
 import api, { extractData } from './api';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Config } from '../config';
 import { useAuthStore } from '../stores/authStore';
 import type { SkipReason } from '../types/api';
@@ -34,8 +34,11 @@ export async function uploadPhoto(
   photoUri: string,
   lat: number,
   lng: number,
-): Promise<{ id: string; url: string; geofence_valid: boolean }> {
+): Promise<{ id: string; url: string; geofence_valid: boolean; distance_meters?: number }> {
   const token = useAuthStore.getState().token;
+  if (!token) {
+    throw new Error('Authentication required before uploading photos.');
+  }
 
   // Use FileSystem.uploadAsync for reliable multipart upload from Expo
   const response = await FileSystem.uploadAsync(
@@ -43,7 +46,7 @@ export async function uploadPhoto(
     photoUri,
     {
       httpMethod: 'POST',
-      uploadType: 1 as any, // FileSystem.FileSystemUploadType.MULTIPART
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
       fieldName: 'photo',
       parameters: {
         lat: lat.toString(),
@@ -59,5 +62,11 @@ export async function uploadPhoto(
   if (!parsed.success) {
     throw new Error(parsed.error ?? 'Photo upload failed');
   }
-  return parsed.data;
+  const photo = parsed.data?.photo;
+  return {
+    id: photo.id,
+    url: photo.url,
+    geofence_valid: photo.geofence_valid,
+    distance_meters: parsed.data?.geofence?.distanceMeters,
+  };
 }

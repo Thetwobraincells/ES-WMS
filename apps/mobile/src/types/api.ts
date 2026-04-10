@@ -33,7 +33,7 @@ export type BinType = 'WET' | 'DRY' | 'MIXED';
 
 export type Shift = 'AM' | 'PM';
 
-export type VehicleStatus = 'IDLE' | 'EN_ROUTE' | 'COLLECTING' | 'RETURNING' | 'MAINTENANCE';
+export type VehicleStatus = 'IDLE' | 'EN_ROUTE' | 'COLLECTING' | 'FULL' | 'RETURNING_TO_DEPOT';
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +90,10 @@ export interface Vehicle {
   registration_no: string;
   capacity_kg: number;
   vehicle_type: string;
+  current_load_kg?: number;
+  load_percent?: number;
+  last_update?: string | null;
+  status?: VehicleStatus;
 }
 
 export interface RouteProgress {

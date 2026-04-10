@@ -221,8 +221,11 @@ export default function RouteOverview() {
   const upcomingStops = stops
     .filter(s => s.status === 'PENDING' || s.status === 'IN_PROGRESS')
     .sort((a, b) => a.sequence_order - b.sequence_order);
+  const activeStopId =
+    upcomingStops.find(s => s.status === 'IN_PROGRESS')?.id ?? upcomingStops[0]?.id ?? null;
 
-  const loadPercent = vehicle ? Math.round(((vehicle.capacity_kg - 1000) / vehicle.capacity_kg) * 100) : 0;
+  const loadPercent = vehicle?.load_percent ?? 0;
+  const currentLoadKg = vehicle?.current_load_kg ?? 0;
   const shiftLabel  = route?.shift === 'AM' ? 'MORNING SHIFT' : route?.shift === 'PM' ? 'EVENING SHIFT' : 'SHIFT';
 
   // ── Animated progress bar ─────────────────────────────────────────────────
@@ -313,7 +316,7 @@ export default function RouteOverview() {
               <Text style={s.vehicleId}>{vehicle.registration_no}</Text>
             </View>
             <Text style={s.loadDetail}>
-              {vehicle.capacity_kg.toLocaleString()} kg capacity
+              {currentLoadKg.toLocaleString()} kg / {vehicle.capacity_kg.toLocaleString()} kg
             </Text>
             {loadPercent >= 75 && (
               <View style={s.warnRow}>
@@ -362,7 +365,7 @@ export default function RouteOverview() {
         ) : (
           upcomingStops.map(stop => (
             <StopCard key={stop.id} stop={stop}
-              isActive={stop.status === 'IN_PROGRESS'}
+              isActive={stop.id === activeStopId}
               onPress={() => navigation.navigate('StopDetail', { stopId: stop.id })}
               onNavigate={() => {}} />
           ))

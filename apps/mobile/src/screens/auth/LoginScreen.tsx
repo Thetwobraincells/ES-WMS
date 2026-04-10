@@ -303,6 +303,13 @@ export default function LoginScreen() {
                     />
                   </View>
 
+                  {devOtp ? (
+                    <View style={styles.devOtpBox}>
+                      <Ionicons name="key-outline" size={16} color={Colors.green} />
+                      <Text style={styles.devOtpText}>Dev OTP: {devOtp}</Text>
+                    </View>
+                  ) : null}
+
                   {/* Resend */}
                   <TouchableOpacity
                     onPress={() => requestOtp(mobile)}
@@ -637,6 +644,22 @@ const styles = StyleSheet.create({
     fontSize: Theme.fontSize.sm,
     fontWeight: '600',
     color: Colors.green,
+  },
+  devOtpBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ECFDF3',
+    borderRadius: Theme.radiusSm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  devOtpText: {
+    fontSize: Theme.fontSize.sm,
+    fontWeight: '700',
+    color: Colors.greenMuted,
+    letterSpacing: 0.4,
   },
 
   // ── Error ─────────────────────────────────────────────────────────────────

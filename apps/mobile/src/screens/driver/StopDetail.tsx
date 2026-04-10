@@ -74,6 +74,7 @@ export default function StopDetail() {
   const stops      = useRouteStore(s => s.stops);
   const skipStop   = useRouteStore(s => s.skipStop);
   const isActioning = useRouteStore(s => s.isActioning);
+  const vehicle = useRouteStore(s => s.vehicle);
 
   const stop = stops.find(s => s.id === stopId);
 
@@ -277,7 +278,7 @@ export default function StopDetail() {
         visible={skipModalVisible}
         stopSociety={stop.society?.name ?? 'Society'}
         stopId={stop.id}
-        vehicleLoadPct={80}
+        vehicleLoadPct={vehicle?.load_percent ?? 0}
         onConfirm={handleSkipConfirmed}
         onCancel={() => setSkipModalVisible(false)}
       />

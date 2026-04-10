@@ -37,8 +37,16 @@ export async function completeStop(req: Request, res: Response, next: NextFuncti
 
     const stop = await prisma.stop.findUniqueOrThrow({
       where: { id: stopId },
-      include: { photos: true },
+      include: {
+        photos: true,
+        route: { select: { driver_id: true } },
+      },
     });
+
+    if (stop.route.driver_id !== req.user!.userId) {
+      sendError(res, "You are not assigned to this stop.", 403, "STOP_ACCESS_DENIED");
+      return;
+    }
 
     // Validate at least one geofence-valid photo exists
     const validPhotos = stop.photos.filter((p) => p.geofence_valid);
@@ -97,6 +105,11 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
         society: true,
       },
     });
+
+    if (stop.route.driver_id !== req.user!.userId) {
+      sendError(res, "You are not assigned to this stop.", 403, "STOP_ACCESS_DENIED");
+      return;
+    }
 
     if (stop.status === StopStatus.COMPLETED || stop.status === StopStatus.SKIPPED) {
       sendError(res, `Stop is already ${stop.status.toLowerCase()}.`, 400, "INVALID_STATUS");
@@ -179,7 +192,17 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
     const stopId = getSingleValue(req.params.id)!;
     const { lat, lng } = req.body;
 
-    const stop = await prisma.stop.findUniqueOrThrow({ where: { id: stopId } });
+    const stop = await prisma.stop.findUniqueOrThrow({
+      where: { id: stopId },
+      include: {
+        route: { select: { driver_id: true } },
+      },
+    });
+
+    if (stop.route.driver_id !== req.user!.userId) {
+      sendError(res, "You are not assigned to this stop.", 403, "STOP_ACCESS_DENIED");
+      return;
+    }
 
     // Geofence check
     const geofence = isWithinGeofence(lat, lng, stop.lat, stop.lng, env.GEOFENCE_RADIUS_METERS);

@@ -5,7 +5,7 @@ import { sendSuccess, sendCreated, sendError } from "../utils/apiResponse";
 import { getPagination, buildPaginationMeta } from "../utils/pagination";
 import { getSingleValue } from "../utils/request";
 import { logAudit } from "../services/audit.service";
-import { Shift } from "@prisma/client";
+import { Shift, UserRole } from "@prisma/client";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -31,32 +31,62 @@ export const updateRouteSchema = createRouteSchema.partial();
 export async function getMyRoute(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.userId;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const userRole = req.user!.role;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1);
 
     const currentHour = new Date().getHours();
     const currentShift = currentHour < 14 ? Shift.AM : Shift.PM;
 
-    const route = await prisma.route.findFirst({
+    const routeIncludes = {
+      vehicle: {
+        include: {
+          telemetry: {
+            orderBy: { recorded_at: "desc" as const },
+            take: 1,
+          },
+        },
+      },
+      stops: {
+        orderBy: { sequence_order: "asc" as const },
+        include: {
+          society: { select: { name: true, address: true } },
+          photos: { select: { id: true, url: true, geofence_valid: true } },
+        },
+      },
+      ward: { select: { name: true } },
+      supervisor: { select: { id: true, name: true, mobile: true } },
+    };
+
+    const routeOwnerFilter =
+      userRole === UserRole.SUPERVISOR
+        ? { supervisor_id: userId }
+        : { driver_id: userId };
+
+    let route = await prisma.route.findFirst({
       where: {
-        driver_id: userId,
-        date: { gte: today },
+        ...routeOwnerFilter,
+        date: { gte: startOfToday, lt: endOfToday },
         shift: currentShift,
         is_active: true,
       },
-      include: {
-        vehicle: true,
-        stops: {
-          orderBy: { sequence_order: "asc" },
-          include: {
-            society: { select: { name: true, address: true } },
-            photos: { select: { id: true, url: true, geofence_valid: true } },
-          },
-        },
-        ward: { select: { name: true } },
-        supervisor: { select: { id: true, name: true, mobile: true } },
-      },
+      orderBy: { created_at: "desc" },
+      include: routeIncludes,
     });
+
+    if (!route) {
+      route = await prisma.route.findFirst({
+        where: {
+          ...routeOwnerFilter,
+          date: { gte: startOfToday, lt: endOfToday },
+          is_active: true,
+        },
+        orderBy: [{ date: "desc" }, { created_at: "desc" }],
+        include: routeIncludes,
+      });
+    }
 
     if (!route) {
       sendError(res, "No active route found for your current shift.", 404, "ROUTE_NOT_FOUND");
@@ -67,9 +97,20 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
     const totalStops = route.stops.length;
     const completedStops = route.stops.filter((s) => s.status === "COMPLETED").length;
     const skippedStops = route.stops.filter((s) => s.status === "SKIPPED").length;
+    const latestTelemetry = route.vehicle.telemetry[0];
+    const { telemetry, ...vehicle } = route.vehicle;
 
     sendSuccess(res, {
       ...route,
+      vehicle: {
+        ...vehicle,
+        current_load_kg: latestTelemetry?.current_load_kg ?? 0,
+        load_percent: latestTelemetry
+          ? Math.round((latestTelemetry.current_load_kg / route.vehicle.capacity_kg) * 100)
+          : 0,
+        status: latestTelemetry?.status ?? "IDLE",
+        last_update: latestTelemetry?.recorded_at ?? null,
+      },
       progress: {
         total: totalStops,
         completed: completedStops,
