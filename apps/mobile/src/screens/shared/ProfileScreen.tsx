@@ -240,22 +240,16 @@ export default function ProfileScreen() {
 
           {/* Identity meta */}
           <View style={s.identityMeta}>
-            {user?.vehicleId && (
-              <View style={s.metaChip}>
-                <Ionicons name="bus-outline" size={12} color={Colors.textMuted} />
-                <Text style={s.metaChipText}>{user.vehicleId}</Text>
-              </View>
-            )}
-            {user?.zoneId && (
+            {user?.ward_id && (
               <View style={s.metaChip}>
                 <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-                <Text style={s.metaChipText}>{user.zoneId}</Text>
+                <Text style={s.metaChipText}>Ward: {user.ward_id}</Text>
               </View>
             )}
-            {user?.societyId && (
+            {user?.society_id && (
               <View style={s.metaChip}>
                 <Ionicons name="business-outline" size={12} color={Colors.textMuted} />
-                <Text style={s.metaChipText}>{user.societyId}</Text>
+                <Text style={s.metaChipText}>Society: {user.society_id}</Text>
               </View>
             )}
             <View style={s.metaChip}>
