@@ -1,12 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { prisma } from "../utils/prisma";
-import { sendSuccess, sendError } from "../utils/apiResponse";
-import { createNotification } from "../services/notification.service";
+import { NotificationType, VehicleStatus } from "@prisma/client";
 import { env } from "../config/env";
-import { VehicleStatus, NotificationType } from "@prisma/client";
-
-// ─── Validation Schemas ─────────────────────────────────────────────────────
+import { createNotification } from "../services/notification.service";
+import { getSetting } from "../services/settings.service";
+import { sendSuccess, sendError } from "../utils/apiResponse";
+import { prisma } from "../utils/prisma";
 
 export const telemetrySchema = z.object({
   vehicle_id: z.string(),
@@ -17,17 +16,14 @@ export const telemetrySchema = z.object({
   timestamp: z.string().optional(),
 });
 
-// ─── Handlers ───────────────────────────────────────────────────────────────
-
 /**
  * POST /api/v1/iot/telemetry
  * Receive vehicle telemetry from the Mock IoT Engine.
- * Per PRD §6.3: GPS pings + load cell simulation every 30 seconds.
+ * Per PRD Section 6.3: GPS pings and load cell simulation every 30 seconds.
  * Authenticated via API key (not JWT).
  */
 export async function receiveTelemetry(req: Request, res: Response, next: NextFunction) {
   try {
-    // Validate API key
     const apiKey = req.headers["x-api-key"];
     if (apiKey !== env.IOT_API_KEY) {
       sendError(res, "Invalid IoT API key.", 401, "INVALID_API_KEY");
@@ -36,13 +32,9 @@ export async function receiveTelemetry(req: Request, res: Response, next: NextFu
 
     const data = req.body as z.infer<typeof telemetrySchema>;
 
-    // Find vehicle by registration_no or ID
     const vehicle = await prisma.vehicle.findFirst({
       where: {
-        OR: [
-          { id: data.vehicle_id },
-          { registration_no: data.vehicle_id },
-        ],
+        OR: [{ id: data.vehicle_id }, { registration_no: data.vehicle_id }],
       },
     });
 
@@ -51,7 +43,6 @@ export async function receiveTelemetry(req: Request, res: Response, next: NextFu
       return;
     }
 
-    // Insert telemetry record
     const telemetry = await prisma.vehicleTelemetry.create({
       data: {
         vehicle_id: vehicle.id,
@@ -63,11 +54,10 @@ export async function receiveTelemetry(req: Request, res: Response, next: NextFu
       },
     });
 
-    // ── Capacity alerts (PRD FR-DRV-15, FR-DRV-16) ──
     const loadPercent = (data.current_load_kg / vehicle.capacity_kg) * 100;
+    const truckFullThreshold = await getSetting("TRUCK_FULL_THRESHOLD_PERCENT");
 
     if (loadPercent >= 100) {
-      // Get the active route driver for this vehicle
       const activeRoute = await prisma.route.findFirst({
         where: { vehicle_id: vehicle.id, is_active: true },
         include: { driver: true, supervisor: true },
@@ -81,7 +71,7 @@ export async function receiveTelemetry(req: Request, res: Response, next: NextFu
           body: `Your truck (${vehicle.registration_no}) has reached 100% capacity. Remaining stops will be auto-validated for skip.`,
         });
       }
-    } else if (loadPercent >= 90) {
+    } else if (loadPercent >= truckFullThreshold) {
       const activeRoute = await prisma.route.findFirst({
         where: { vehicle_id: vehicle.id, is_active: true },
       });
@@ -96,10 +86,14 @@ export async function receiveTelemetry(req: Request, res: Response, next: NextFu
       }
     }
 
-    sendSuccess(res, {
-      telemetry_id: telemetry.id,
-      load_percent: Math.round(loadPercent),
-    }, 201);
+    sendSuccess(
+      res,
+      {
+        telemetry_id: telemetry.id,
+        load_percent: Math.round(loadPercent),
+      },
+      201
+    );
   } catch (err) {
     next(err);
   }

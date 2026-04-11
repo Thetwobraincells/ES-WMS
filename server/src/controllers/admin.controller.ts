@@ -1,14 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import { UserRole } from "@prisma/client";
 import { prisma } from "../utils/prisma";
-import { sendSuccess, sendCreated, sendError } from "../utils/apiResponse";
+import { sendSuccess, sendCreated } from "../utils/apiResponse";
 import { getPagination, buildPaginationMeta } from "../utils/pagination";
 import { getSingleValue } from "../utils/request";
 import { hashPassword } from "../services/auth.service";
 import { logAudit } from "../services/audit.service";
-import { UserRole } from "@prisma/client";
-
-// ─── Validation Schemas ─────────────────────────────────────────────────────
+import { generatePdfBuffer } from "../services/export.service";
 
 export const createUserSchema = z.object({
   name: z.string().min(2).max(100),
@@ -22,7 +21,46 @@ export const createUserSchema = z.object({
 
 export const updateUserSchema = createUserSchema.partial();
 
-// ─── Handlers ───────────────────────────────────────────────────────────────
+async function getMassBalanceReportData(dateStr: string) {
+  const date = new Date(dateStr);
+  const nextDay = new Date(date);
+  nextDay.setDate(nextDay.getDate() + 1);
+
+  const vehicles = await prisma.vehicle.findMany({
+    where: { is_active: true },
+    include: {
+      telemetry: {
+        where: {
+          recorded_at: { gte: date, lt: nextDay },
+        },
+        orderBy: { current_load_kg: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  const massBalance = vehicles.map((vehicle) => ({
+    vehicle_id: vehicle.id,
+    registration_no: vehicle.registration_no,
+    capacity_kg: vehicle.capacity_kg,
+    peak_load_kg: vehicle.telemetry[0]?.current_load_kg ?? 0,
+    utilization_percent: vehicle.telemetry[0]
+      ? Math.round((vehicle.telemetry[0].current_load_kg / vehicle.capacity_kg) * 100)
+      : 0,
+  }));
+
+  const totalCollected = massBalance.reduce((sum, vehicle) => sum + vehicle.peak_load_kg, 0);
+
+  return {
+    date: dateStr,
+    vehicles: massBalance,
+    summary: {
+      total_collected_kg: totalCollected,
+      total_capacity_kg: vehicles.reduce((sum, vehicle) => sum + vehicle.capacity_kg, 0),
+      vehicle_count: vehicles.length,
+    },
+  };
+}
 
 /**
  * GET /api/v1/admin/users
@@ -159,51 +197,54 @@ export async function updateUser(req: Request, res: Response, next: NextFunction
 
 /**
  * GET /api/v1/admin/mass-balance
- * Get mass balance data — collected vs. dumped.
+ * Get mass balance data - collected vs. dumped.
  * Per PRD FR-ADM-16/17.
  */
 export async function getMassBalance(req: Request, res: Response, next: NextFunction) {
   try {
     const dateStr = getSingleValue(req.query.date) ?? new Date().toISOString().split("T")[0];
-    const date = new Date(dateStr);
-    const nextDay = new Date(date);
-    nextDay.setDate(nextDay.getDate() + 1);
+    const report = await getMassBalanceReportData(dateStr);
 
-    // Get telemetry for the date — peak load per vehicle
-    const vehicles = await prisma.vehicle.findMany({
-      where: { is_active: true },
-      include: {
-        telemetry: {
-          where: {
-            recorded_at: { gte: date, lt: nextDay },
-          },
-          orderBy: { current_load_kg: "desc" },
-          take: 1,
-        },
+    sendSuccess(res, report);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/admin/mass-balance/export
+ * Export daily mass balance report as PDF.
+ */
+export async function exportMassBalanceReport(req: Request, res: Response, next: NextFunction) {
+  try {
+    const dateStr = getSingleValue(req.query.date) ?? new Date().toISOString().split("T")[0];
+    const report = await getMassBalanceReportData(dateStr);
+
+    const pdfBuffer = await generatePdfBuffer(
+      `Daily Mass Balance Report (${report.date})`,
+      ["Vehicle ID", "Registration No", "Capacity (kg)", "Peak Load (kg)", "Utilization (%)"],
+      report.vehicles.map((vehicle) => [
+        vehicle.vehicle_id,
+        vehicle.registration_no,
+        vehicle.capacity_kg,
+        vehicle.peak_load_kg,
+        vehicle.utilization_percent,
+      ])
+    );
+
+    await logAudit({
+      actorId: req.user!.userId,
+      action: "EXPORT_MASS_BALANCE",
+      entityType: "Report",
+      entityId: report.date,
+      newValue: {
+        vehicle_count: report.summary.vehicle_count,
       },
     });
 
-    const massBalance = vehicles.map((v) => ({
-      vehicle_id: v.id,
-      registration_no: v.registration_no,
-      capacity_kg: v.capacity_kg,
-      peak_load_kg: v.telemetry[0]?.current_load_kg ?? 0,
-      utilization_percent: v.telemetry[0]
-        ? Math.round((v.telemetry[0].current_load_kg / v.capacity_kg) * 100)
-        : 0,
-    }));
-
-    const totalCollected = massBalance.reduce((sum, v) => sum + v.peak_load_kg, 0);
-
-    sendSuccess(res, {
-      date: dateStr,
-      vehicles: massBalance,
-      summary: {
-        total_collected_kg: totalCollected,
-        total_capacity_kg: vehicles.reduce((sum, v) => sum + v.capacity_kg, 0),
-        vehicle_count: vehicles.length,
-      },
-    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="mass-balance-report.pdf"');
+    res.send(pdfBuffer);
   } catch (err) {
     next(err);
   }

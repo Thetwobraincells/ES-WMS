@@ -6,6 +6,7 @@ import { getPagination, buildPaginationMeta } from "../utils/pagination";
 import { getSingleValue } from "../utils/request";
 import { approveFine, rejectFine } from "../services/fine.service";
 import { logAudit } from "../services/audit.service";
+import { generateCsvBuffer, generatePdfBuffer } from "../services/export.service";
 
 // ─── Validation Schemas ─────────────────────────────────────────────────────
 
@@ -44,6 +45,90 @@ export async function listFineEvents(req: Request, res: Response, next: NextFunc
     ]);
 
     sendSuccess(res, fines, 200, buildPaginationMeta(page, limit, total));
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/admin/fine-events/export?format=csv|pdf
+ * Export the current month's fine collection report.
+ */
+export async function exportFineEvents(req: Request, res: Response, next: NextFunction) {
+  try {
+    const format = getSingleValue(req.query.format)?.toLowerCase();
+
+    if (format !== "csv" && format !== "pdf") {
+      sendError(res, "Query parameter 'format' must be 'csv' or 'pdf'.", 400, "INVALID_FORMAT");
+      return;
+    }
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const monthLabel = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    const fines = await prisma.fineEvent.findMany({
+      where: {
+        created_at: {
+          gte: monthStart,
+          lt: monthEnd,
+        },
+      },
+      orderBy: { created_at: "desc" },
+      include: {
+        society: { select: { name: true } },
+      },
+    });
+
+    const reportRows = fines.map((fine) => ({
+      fine_id: fine.id,
+      society_name: fine.society.name,
+      amount: fine.amount,
+      status: fine.status,
+      reason: fine.reason,
+      created_at: fine.created_at.toISOString(),
+    }));
+
+    let buffer: Buffer;
+    let contentType: string;
+    let extension: "csv" | "pdf";
+
+    if (format === "csv") {
+      buffer = generateCsvBuffer(reportRows);
+      contentType = "text/csv; charset=utf-8";
+      extension = "csv";
+    } else {
+      buffer = await generatePdfBuffer(
+        `Monthly Fine Collection Report (${monthLabel})`,
+        ["Fine ID", "Society", "Amount", "Status", "Reason", "Created At"],
+        reportRows.map((row) => [
+          row.fine_id,
+          row.society_name,
+          row.amount,
+          row.status,
+          row.reason,
+          row.created_at,
+        ])
+      );
+      contentType = "application/pdf";
+      extension = "pdf";
+    }
+
+    await logAudit({
+      actorId: req.user!.userId,
+      action: "EXPORT_FINES",
+      entityType: "FineEvent",
+      entityId: monthLabel,
+      newValue: {
+        format,
+        count: fines.length,
+      },
+    });
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="fines-report.${extension}"`);
+    res.send(buffer);
   } catch (err) {
     next(err);
   }

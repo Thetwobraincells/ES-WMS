@@ -312,3 +312,12 @@ model AuditLog {
   @@index([entity_type, entity_id])
   @@map("audit_logs")
 }
+
+model SystemSetting {
+  key         String   @id
+  value       Float
+  description String?
+  updated_at  DateTime @updatedAt
+
+  @@map("system_settings")
+}

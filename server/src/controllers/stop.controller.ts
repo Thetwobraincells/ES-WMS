@@ -1,17 +1,15 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import { SkipReason, StopStatus } from "@prisma/client";
 import { prisma } from "../utils/prisma";
 import { sendSuccess, sendError } from "../utils/apiResponse";
+import { getSingleValue } from "../utils/request";
 import { logAudit } from "../services/audit.service";
 import { createBacklogForSkippedStop } from "../services/backlog.service";
 import { createFineForMixedWaste } from "../services/fine.service";
-import { notifySocietyOfSkip, notifyFalseFullClaim } from "../services/notification.service";
 import { isWithinGeofence } from "../services/geofence.service";
-import { env } from "../config/env";
-import { getSingleValue } from "../utils/request";
-import { SkipReason, StopStatus } from "@prisma/client";
-
-// ─── Validation Schemas ─────────────────────────────────────────────────────
+import { notifySocietyOfSkip, notifyFalseFullClaim } from "../services/notification.service";
+import { getSetting } from "../services/settings.service";
 
 export const skipStopSchema = z.object({
   reason: z.nativeEnum(SkipReason),
@@ -23,13 +21,11 @@ export const uploadPhotoSchema = z.object({
   lng: z.coerce.number(),
 });
 
-// ─── Handlers ───────────────────────────────────────────────────────────────
-
 /**
  * PATCH /api/v1/stops/:id/complete
  * Mark a stop as completed.
  * Per PRD FR-DRV-03: driver can mark complete only after uploading a geotagged photo
- * within 50m of stop coordinates.
+ * within the configured geofence radius of stop coordinates.
  */
 export async function completeStop(req: Request, res: Response, next: NextFunction) {
   try {
@@ -48,12 +44,13 @@ export async function completeStop(req: Request, res: Response, next: NextFuncti
       return;
     }
 
-    // Validate at least one geofence-valid photo exists
-    const validPhotos = stop.photos.filter((p) => p.geofence_valid);
+    const validPhotos = stop.photos.filter((photo) => photo.geofence_valid);
     if (validPhotos.length === 0) {
+      const geofenceRadiusMeters = await getSetting("GEOFENCE_RADIUS_METERS");
+
       sendError(
         res,
-        "Cannot complete stop. Upload a geotagged photo taken within 50m of the stop first.",
+        `Cannot complete stop. Upload a geotagged photo taken within ${geofenceRadiusMeters}m of the stop first.`,
         400,
         "NO_VALID_PHOTO"
       );
@@ -116,8 +113,8 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    // ── FR-DRV-17: Validate TRUCK_FULL against actual load ──
     if (reason === SkipReason.TRUCK_FULL) {
+      const truckFullThreshold = await getSetting("TRUCK_FULL_THRESHOLD_PERCENT");
       const latestTelemetry = await prisma.vehicleTelemetry.findFirst({
         where: { vehicle_id: stop.route.vehicle_id },
         orderBy: { recorded_at: "desc" },
@@ -126,8 +123,7 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
       if (latestTelemetry) {
         const loadPercent = (latestTelemetry.current_load_kg / stop.route.vehicle.capacity_kg) * 100;
 
-        if (loadPercent < env.TRUCK_FULL_THRESHOLD_PERCENT) {
-          // Flag as suspicious but still allow the skip
+        if (loadPercent < truckFullThreshold) {
           console.log(
             `⚠️ FALSE CLAIM: Driver ${req.user!.userId} claimed TRUCK_FULL at ${loadPercent.toFixed(1)}% load`
           );
@@ -144,7 +140,6 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
       }
     }
 
-    // Update stop status
     const updated = await prisma.stop.update({
       where: { id: stopId },
       data: {
@@ -154,14 +149,11 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
       },
     });
 
-    // ── FR-DRV-05: Auto-create backlog ──
     await createBacklogForSkippedStop(stopId, reason);
 
-    // ── FR-CIT-02: Notify society citizens ──
     if (stop.society_id) {
       await notifySocietyOfSkip(stop.society_id, reason, "Next available shift");
 
-      // ── FR-ADM-11: Auto-fine for WASTE_MIXED ──
       if (reason === SkipReason.WASTE_MIXED) {
         await createFineForMixedWaste(stop.society_id, stopId, req.user!.userId);
       }
@@ -191,6 +183,7 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
   try {
     const stopId = getSingleValue(req.params.id)!;
     const { lat, lng } = req.body;
+    const geofenceRadiusMeters = await getSetting("GEOFENCE_RADIUS_METERS");
 
     const stop = await prisma.stop.findUniqueOrThrow({
       where: { id: stopId },
@@ -204,20 +197,18 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Geofence check
-    const geofence = isWithinGeofence(lat, lng, stop.lat, stop.lng, env.GEOFENCE_RADIUS_METERS);
+    const geofence = isWithinGeofence(lat, lng, stop.lat, stop.lng, geofenceRadiusMeters);
 
     if (!geofence.valid) {
       sendError(
         res,
-        `Photo rejected. You are ${geofence.distanceMeters}m away from the stop (max ${env.GEOFENCE_RADIUS_METERS}m).`,
+        `Photo rejected. You are ${geofence.distanceMeters}m away from the stop (max ${geofenceRadiusMeters}m).`,
         400,
         "GEOFENCE_VIOLATION"
       );
       return;
     }
 
-    // Get uploaded file path (multer)
     const file = req.file;
     if (!file) {
       sendError(res, "No photo file uploaded.", 400, "NO_FILE");
@@ -235,13 +226,17 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
       },
     });
 
-    sendSuccess(res, {
-      photo,
-      geofence: {
-        valid: geofence.valid,
-        distanceMeters: geofence.distanceMeters,
+    sendSuccess(
+      res,
+      {
+        photo,
+        geofence: {
+          valid: geofence.valid,
+          distanceMeters: geofence.distanceMeters,
+        },
       },
-    }, 201);
+      201
+    );
   } catch (err) {
     next(err);
   }

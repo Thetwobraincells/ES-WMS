@@ -1,6 +1,6 @@
-import { prisma } from "../utils/prisma";
 import { FineStatus } from "@prisma/client";
-import { env } from "../config/env";
+import { prisma } from "../utils/prisma";
+import { getSetting } from "./settings.service";
 
 /**
  * Auto-generate a fine event when a stop is skipped due to WASTE_MIXED.
@@ -11,18 +11,20 @@ export async function createFineForMixedWaste(
   stopId: string,
   driverId: string
 ): Promise<void> {
+  const defaultFineAmount = await getSetting("DEFAULT_FINE_AMOUNT");
+
   await prisma.fineEvent.create({
     data: {
       society_id: societyId,
       stop_id: stopId,
       reason: `Waste not segregated (mixed waste detected). Driver: ${driverId}`,
-      amount: env.DEFAULT_FINE_AMOUNT,
+      amount: defaultFineAmount,
       status: FineStatus.PENDING,
     },
   });
 
   console.log(
-    `💰 Fine event created: ₹${env.DEFAULT_FINE_AMOUNT} for society ${societyId} (WASTE_MIXED at stop ${stopId})`
+    `💰 Fine event created: ₹${defaultFineAmount} for society ${societyId} (WASTE_MIXED at stop ${stopId})`
   );
 }
 
@@ -49,7 +51,9 @@ export async function approveFine(fineId: string, adminId: string): Promise<void
     }),
   ]);
 
-  console.log(`✅ Fine ${fineId} approved by admin ${adminId}. ₹${fine.amount} deducted from society ${fine.society_id}.`);
+  console.log(
+    `✅ Fine ${fineId} approved by admin ${adminId}. ₹${fine.amount} deducted from society ${fine.society_id}.`
+  );
 }
 
 /**
