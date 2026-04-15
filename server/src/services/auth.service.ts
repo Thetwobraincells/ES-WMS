@@ -90,7 +90,7 @@ export async function verifyOtpAndLogin(mobile: string, otp: string) {
 /**
  * Admin login via email + password.
  */
-export async function adminLogin(email: string, password: string) {
+export async function adminLogin(email: string, password: string, otp?: string) {
   const user = await prisma.user.findUnique({ where: { email } });
 
   if (!user || user.role !== UserRole.ADMIN) {
@@ -108,6 +108,12 @@ export async function adminLogin(email: string, password: string) {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
     throw new AuthError("Invalid email or password.", "INVALID_CREDENTIALS");
+  }
+
+  // Optional 2FA input is accepted for admin login flows.
+  // OTP verification can be plugged in here once a provider is wired.
+  if (otp && otp.trim().length === 0) {
+    throw new AuthError("Invalid 2FA code.", "INVALID_2FA");
   }
 
   const token = signToken(user.id, user.role, "web");

@@ -8,6 +8,7 @@ import {
   getRoute,
   createRoute,
   updateRoute,
+  deleteRoute,
   createRouteSchema,
   updateRouteSchema,
 } from "../controllers/route.controller";
@@ -32,5 +33,7 @@ router.post("/", requireRole(UserRole.ADMIN), validate(createRouteSchema), creat
 
 // Admin: update route
 router.patch("/:id", requireRole(UserRole.ADMIN), validate(updateRouteSchema), updateRoute);
+// Admin: delete route
+router.delete("/:id", requireRole(UserRole.ADMIN), deleteRoute);
 
 export default router;

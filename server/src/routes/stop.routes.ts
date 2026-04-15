@@ -5,7 +5,14 @@ import fs from "fs";
 import { authenticate } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { validate } from "../middleware/validate";
-import { completeStop, skipStop, uploadPhoto, skipStopSchema, uploadPhotoSchema } from "../controllers/stop.controller";
+import {
+  completeStop,
+  skipStop,
+  uploadPhoto,
+  listStops,
+  skipStopSchema,
+  uploadPhotoSchema,
+} from "../controllers/stop.controller";
 import { env } from "../config/env";
 import { UserRole } from "@prisma/client";
 
@@ -40,6 +47,9 @@ const upload = multer({
 
 // All stop endpoints require driver auth
 router.use(authenticate);
+
+// GET /api/v1/stops — Stop list for admin/supervisor map layers
+router.get("/", requireRole(UserRole.ADMIN, UserRole.SUPERVISOR), listStops);
 
 // PATCH /api/v1/stops/:id/complete — Mark stop as completed
 router.patch("/:id/complete", requireRole(UserRole.DRIVER), completeStop);

@@ -22,6 +22,7 @@ import {
   updateSettingParamsSchema,
   updateSettingSchema,
 } from "../controllers/settings.controller";
+import { listAlerts, updateAlert, updateAlertSchema } from "../controllers/alerts.controller";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -58,5 +59,9 @@ router.patch(
   validate(updateSettingSchema),
   updateSystemSetting
 );
+
+// Alerts center
+router.get("/alerts", listAlerts);
+router.patch("/alerts/:id", validate(updateAlertSchema), updateAlert);
 
 export default router;

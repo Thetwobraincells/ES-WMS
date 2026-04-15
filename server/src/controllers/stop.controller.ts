@@ -22,6 +22,39 @@ export const uploadPhotoSchema = z.object({
 });
 
 /**
+ * GET /api/v1/stops
+ * List stops for admin map layer and operations views.
+ */
+export async function listStops(req: Request, res: Response, next: NextFunction) {
+  try {
+    const stops = await prisma.stop.findMany({
+      orderBy: { created_at: "desc" },
+      select: {
+        id: true,
+        route_id: true,
+        society_id: true,
+        address: true,
+        lat: true,
+        lng: true,
+        status: true,
+        skip_reason: true,
+        created_at: true,
+      },
+    });
+    sendSuccess(
+      res,
+      stops.map((stop) => ({
+        ...stop,
+        // Keep compatibility with current web payload contract.
+        updated_at: stop.created_at,
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * PATCH /api/v1/stops/:id/complete
  * Mark a stop as completed.
  * Per PRD FR-DRV-03: driver can mark complete only after uploading a geotagged photo

@@ -15,5 +15,7 @@ router.get("/", listBacklogs);
 
 // PATCH /api/v1/admin/backlog/:id/reassign — Reassign backlog to new route
 router.patch("/:id/reassign", validate(reassignBacklogSchema), reassignBacklogHandler);
+// PATCH /api/v1/admin/backlog/:id — Reassign backlog to new route (API alias)
+router.patch("/:id", validate(reassignBacklogSchema), reassignBacklogHandler);
 
 export default router;

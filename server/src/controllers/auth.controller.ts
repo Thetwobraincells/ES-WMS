@@ -17,6 +17,7 @@ export const verifyOtpSchema = z.object({
 export const adminLoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
+  otp: z.string().optional(),
 });
 
 // ─── Handlers ───────────────────────────────────────────────────────────────
@@ -59,8 +60,26 @@ export async function verifyOtp(req: Request, res: Response, next: NextFunction)
  */
 export async function adminLoginHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { email, password } = req.body;
-    const result = await adminLogin(email, password);
+    const { email, password, otp } = req.body;
+    const result = await adminLogin(email, password, otp);
+    sendSuccess(res, result);
+  } catch (err) {
+    if (err instanceof AuthError) {
+      sendError(res, err.message, 401, err.code);
+      return;
+    }
+    next(err);
+  }
+}
+
+/**
+ * POST /api/v1/auth/login
+ * Admin login via email + password (+ optional 2FA OTP).
+ */
+export async function loginHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email, password, otp } = req.body;
+    const result = await adminLogin(email, password, otp);
     sendSuccess(res, result);
   } catch (err) {
     if (err instanceof AuthError) {

@@ -248,3 +248,28 @@ export async function updateRoute(req: Request, res: Response, next: NextFunctio
     next(err);
   }
 }
+
+/**
+ * DELETE /api/v1/routes/:id
+ * Delete a route (admin only).
+ */
+export async function deleteRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    const routeId = getSingleValue(req.params.id)!;
+    const old = await prisma.route.findUniqueOrThrow({ where: { id: routeId } });
+
+    await prisma.route.delete({ where: { id: routeId } });
+
+    await logAudit({
+      actorId: req.user!.userId,
+      action: "DELETE_ROUTE",
+      entityType: "Route",
+      entityId: routeId,
+      oldValue: old as unknown as Record<string, unknown>,
+    });
+
+    sendSuccess(res, { id: routeId });
+  } catch (err) {
+    next(err);
+  }
+}
