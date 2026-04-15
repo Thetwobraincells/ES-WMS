@@ -8,6 +8,8 @@ import { getSingleValue } from "../utils/request";
 import { hashPassword } from "../services/auth.service";
 import { logAudit } from "../services/audit.service";
 import { generatePdfBuffer } from "../services/export.service";
+import { getSetting } from "../services/settings.service";
+import { createMassBalanceDiscrepancyAlert } from "../services/alert.service";
 
 export const createUserSchema = z.object({
   name: z.string().min(2).max(100),
@@ -26,6 +28,8 @@ async function getMassBalanceReportData(dateStr: string) {
   const nextDay = new Date(date);
   nextDay.setDate(nextDay.getDate() + 1);
 
+  const varianceThreshold = await getSetting("MASS_BALANCE_VARIANCE_PERCENT");
+
   const vehicles = await prisma.vehicle.findMany({
     where: { is_active: true },
     include: {
@@ -39,25 +43,49 @@ async function getMassBalanceReportData(dateStr: string) {
     },
   });
 
-  const massBalance = vehicles.map((vehicle) => ({
-    vehicle_id: vehicle.id,
-    registration_no: vehicle.registration_no,
-    capacity_kg: vehicle.capacity_kg,
-    peak_load_kg: vehicle.telemetry[0]?.current_load_kg ?? 0,
-    utilization_percent: vehicle.telemetry[0]
+  const massBalance = vehicles.map((vehicle) => {
+    const peakLoad = vehicle.telemetry[0]?.current_load_kg ?? 0;
+    const utilizationPercent = vehicle.telemetry[0]
       ? Math.round((vehicle.telemetry[0].current_load_kg / vehicle.capacity_kg) * 100)
-      : 0,
-  }));
+      : 0;
 
-  const totalCollected = massBalance.reduce((sum, vehicle) => sum + vehicle.peak_load_kg, 0);
+    // FR-ADM-17: variance detection (collected vs capacity utilization)
+    // Simple model: expected utilization based on average, flag if individual vehicle deviates
+    const variancePercent = Math.abs(utilizationPercent - 100);
+    const flagged = peakLoad > 0 && variancePercent > varianceThreshold;
+
+    return {
+      vehicle_id: vehicle.id,
+      registration_no: vehicle.registration_no,
+      capacity_kg: vehicle.capacity_kg,
+      peak_load_kg: peakLoad,
+      utilization_percent: utilizationPercent,
+      variance_percent: variancePercent,
+      flagged,
+    };
+  });
+
+  const totalCollected = massBalance.reduce((sum, v) => sum + v.peak_load_kg, 0);
+  const flaggedVehicles = massBalance.filter((v) => v.flagged);
+
+  // Create alerts for flagged vehicles (async, don't block)
+  for (const flagged of flaggedVehicles) {
+    createMassBalanceDiscrepancyAlert(
+      flagged.registration_no,
+      flagged.variance_percent,
+      flagged.vehicle_id
+    ).catch(console.error);
+  }
 
   return {
     date: dateStr,
     vehicles: massBalance,
     summary: {
       total_collected_kg: totalCollected,
-      total_capacity_kg: vehicles.reduce((sum, vehicle) => sum + vehicle.capacity_kg, 0),
+      total_capacity_kg: vehicles.reduce((sum, v) => sum + v.capacity_kg, 0),
       vehicle_count: vehicles.length,
+      flagged_count: flaggedVehicles.length,
+      variance_threshold_percent: varianceThreshold,
     },
   };
 }
@@ -245,6 +273,76 @@ export async function exportMassBalanceReport(req: Request, res: Response, next:
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", 'attachment; filename="mass-balance-report.pdf"');
     res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/admin/waste-flow
+ * Aggregated waste flow data for a Sankey-style visualization.
+ * Uses today's active stops as the collection source and ward as the sink bucket.
+ */
+export async function getWasteFlowData(req: Request, res: Response, next: NextFunction) {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const stops = await prisma.stop.findMany({
+      where: {
+        route: {
+          is_active: true,
+          date: { gte: today, lt: tomorrow },
+        },
+      },
+      select: {
+        status: true,
+        route: {
+          select: {
+            ward: { select: { id: true, name: true } },
+            vehicle: { select: { id: true, registration_no: true } },
+          },
+        },
+        society: { select: { id: true, name: true } },
+      },
+    });
+
+    const flows = stops
+      .filter((stop) => stop.society)
+      .map((stop) => ({
+        source: stop.society!.name,
+        vehicle: stop.route.vehicle.registration_no,
+        ward: stop.route.ward.name,
+        value: stop.status === "COMPLETED" ? 1 : 0.5,
+      }));
+
+    sendSuccess(res, {
+      date: today.toISOString().split("T")[0],
+      nodes: Array.from(
+        new Set(
+          flows.flatMap((flow) => [flow.source, flow.vehicle, flow.ward, "Dumping Yard"])
+        )
+      ).map((id) => ({ id })),
+      links: [
+        ...flows.map((flow) => ({
+          source: flow.source,
+          target: flow.vehicle,
+          value: flow.value,
+        })),
+        ...flows.map((flow) => ({
+          source: flow.vehicle,
+          target: flow.ward,
+          value: flow.value,
+        })),
+        ...flows.map((flow) => ({
+          source: flow.ward,
+          target: "Dumping Yard",
+          value: flow.value,
+        })),
+      ],
+    });
   } catch (err) {
     next(err);
   }

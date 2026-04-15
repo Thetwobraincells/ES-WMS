@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../utils/prisma";
-import { sendSuccess } from "../utils/apiResponse";
+import { sendSuccess, sendError } from "../utils/apiResponse";
 import { getPagination, buildPaginationMeta } from "../utils/pagination";
 import { getSingleValue } from "../utils/request";
 
@@ -48,6 +48,15 @@ export async function getMyNotifications(req: Request, res: Response, next: Next
 export async function markAsRead(req: Request, res: Response, next: NextFunction) {
   try {
     const notificationId = getSingleValue(req.params.id)!;
+    const existing = await prisma.notification.findUniqueOrThrow({
+      where: { id: notificationId },
+    });
+
+    if (existing.target_user_id !== req.user!.userId) {
+      sendError(res, "You can only update your own notifications.", 403, "FORBIDDEN");
+      return;
+    }
+
     const notification = await prisma.notification.update({
       where: { id: notificationId },
       data: { read_at: new Date() },

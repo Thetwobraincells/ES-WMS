@@ -1,9 +1,12 @@
 {
+  "extends": "./apps/mobile/tsconfig.json",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "strict": true,
-    "skipLibCheck": true
-  }
+    "baseUrl": "./apps/mobile"
+  },
+  "include": [
+    "./apps/mobile/**/*.ts",
+    "./apps/mobile/**/*.tsx",
+    "./apps/mobile/.expo/types/**/*.d.ts"
+  ]
 }
 

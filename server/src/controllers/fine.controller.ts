@@ -37,7 +37,31 @@ export async function listFineEvents(req: Request, res: Response, next: NextFunc
         orderBy: { created_at: "desc" },
         include: {
           society: { select: { name: true, wallet_balance: true } },
-          stop: { select: { address: true } },
+          stop: {
+            select: {
+              address: true,
+              route: {
+                select: {
+                  driver: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
+                },
+              },
+              photos: {
+                select: {
+                  id: true,
+                  url: true,
+                  taken_at: true,
+                  geofence_valid: true,
+                },
+                orderBy: { taken_at: "desc" },
+                take: 1,
+              },
+            },
+          },
           admin: { select: { name: true } },
         },
       }),

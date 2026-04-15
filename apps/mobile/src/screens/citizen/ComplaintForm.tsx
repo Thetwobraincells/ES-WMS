@@ -37,6 +37,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 
 import { Colors, Theme } from '../../theme/colors';
 import BigButton     from '../../components/BigButton';
@@ -51,6 +52,16 @@ interface IssueType {
   icon:  keyof typeof Ionicons.glyphMap;
   color: string;
 }
+
+type SelectedPhoto = {
+  uri: string;
+  name: string;
+  type: string;
+  coords: {
+    lat: number;
+    lng: number;
+  } | null;
+};
 
 const ISSUE_TYPES: IssueType[] = [
   { id: 'missed_pickup',  label: 'Missed Pickup',       icon: 'bus-outline',           color: Colors.danger          },
@@ -119,7 +130,7 @@ export default function ComplaintForm() {
 
   const [selectedType, setSelectedType] = useState<IssueType | null>(null);
   const [description,  setDescription]  = useState('');
-  const [photoUri,     setPhotoUri]      = useState<string | null>(null);
+  const [photo,        setPhoto]         = useState<SelectedPhoto | null>(null);
   const [submitting,   setSubmitting]    = useState(false);
   const [submitted,    setSubmitted]     = useState(false);
   const [typeExpanded, setTypeExpanded]  = useState(false);
@@ -143,6 +154,37 @@ export default function ComplaintForm() {
     Animated.spring(dropAnim, { toValue: 0, useNativeDriver: false, speed: 20, bounciness: 0 }).start();
   };
 
+  const getCurrentCoords = async () => {
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (permission.status !== 'granted') {
+      return null;
+    }
+
+    const position = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+
+    return {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+    };
+  };
+
+  const setPickedPhoto = async (asset: ImagePicker.ImagePickerAsset) => {
+    const coords = await getCurrentCoords();
+    const fileName =
+      asset.fileName ??
+      asset.uri.split('/').pop() ??
+      `complaint-${Date.now()}.jpg`;
+
+    setPhoto({
+      uri: asset.uri,
+      name: fileName,
+      type: asset.mimeType ?? 'image/jpeg',
+      coords,
+    });
+  };
+
   const handlePickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -150,12 +192,13 @@ export default function ComplaintForm() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality:    0.7,
       allowsEditing: true,
+      exif: true,
     });
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      await setPickedPhoto(result.assets[0]);
     }
   };
 
@@ -166,17 +209,18 @@ export default function ComplaintForm() {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality:    0.7,
       allowsEditing: true,
+      exif: true,
     });
     if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+      await setPickedPhoto(result.assets[0]);
     }
   };
 
   const handleSubmit = async () => {
-    if (!selectedType || !description.trim()) return;
+    if (!selectedType || !description.trim() || !photo) return;
 
     const societyId = user?.society_id;
     if (!societyId) {
@@ -186,7 +230,16 @@ export default function ComplaintForm() {
 
     setSubmitting(true);
     try {
-      await societyService.submitComplaint(societyId, `[${selectedType.label}] ${description.trim()}`);
+      await societyService.submitComplaint(
+        societyId,
+        `[${selectedType.label}] ${description.trim()}`,
+        {
+          uri: photo.uri,
+          name: photo.name,
+          type: photo.type,
+        },
+        photo.coords,
+      );
       setSubmitted(true);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Failed to submit complaint';
@@ -196,7 +249,7 @@ export default function ComplaintForm() {
     }
   };
 
-  const isValid = !!selectedType && description.trim().length >= 10;
+  const isValid = !!selectedType && description.trim().length >= 10 && !!photo;
 
   // ── Submitted state ────────────────────────────────────────────────────────
   if (submitted) {
@@ -326,15 +379,22 @@ export default function ComplaintForm() {
             <Text style={s.fieldLabel}>Photo Evidence</Text>
             <Text style={s.fieldHint}>Attach a photo of the bin / missed stop to strengthen your report.</Text>
 
-            {photoUri ? (
+            {photo ? (
               /* Photo preview */
               <View style={s.photoPreview}>
                 <View style={s.photoThumb}>
                   {/* In production: <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} /> */}
                   <Ionicons name="image-outline" size={28} color={Colors.green} />
                   <Text style={s.photoThumbLabel}>Photo attached ✓</Text>
+                  {photo.coords ? (
+                    <Text style={s.geoTagText}>
+                      Geo-tagged at {photo.coords.lat.toFixed(5)}, {photo.coords.lng.toFixed(5)}
+                    </Text>
+                  ) : (
+                    <Text style={s.geoTagText}>Photo attached without location access</Text>
+                  )}
                 </View>
-                <TouchableOpacity style={s.removePhotoBtn} onPress={() => setPhotoUri(null)}>
+                <TouchableOpacity style={s.removePhotoBtn} onPress={() => setPhoto(null)}>
                   <Ionicons name="close-circle" size={20} color={Colors.danger} />
                   <Text style={s.removePhotoText}>Remove</Text>
                 </TouchableOpacity>
@@ -472,6 +532,7 @@ const s = StyleSheet.create({
     borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', gap: 8,
   },
   photoThumbLabel: { fontSize: 13, fontWeight: '700', color: Colors.green },
+  geoTagText: { fontSize: 11, color: Colors.textSecondary, textAlign: 'center', paddingHorizontal: 12 },
   removePhotoBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
   removePhotoText: { fontSize: 12, fontWeight: '600', color: Colors.danger },
   photoOptions: {

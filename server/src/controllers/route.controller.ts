@@ -1,13 +1,21 @@
 import { Request, Response, NextFunction } from "express";
+import { Prisma, Shift, UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../utils/prisma";
 import { sendSuccess, sendCreated, sendError } from "../utils/apiResponse";
 import { getPagination, buildPaginationMeta } from "../utils/pagination";
 import { getSingleValue } from "../utils/request";
 import { logAudit } from "../services/audit.service";
-import { Shift, UserRole } from "@prisma/client";
 
-// ─── Validation Schemas ─────────────────────────────────────────────────────
+const routeStopSchema = z.object({
+  id: z.string().uuid().optional(),
+  society_id: z.string().uuid().nullable().optional(),
+  address: z.string().min(3).max(255),
+  lat: z.number(),
+  lng: z.number(),
+  bin_type: z.enum(["WET", "DRY", "MIXED"]),
+  sequence_order: z.number().int().positive(),
+});
 
 export const createRouteSchema = z.object({
   ward_id: z.string().uuid(),
@@ -17,16 +25,88 @@ export const createRouteSchema = z.object({
   shift: z.nativeEnum(Shift),
   date: z.string().optional(),
   is_active: z.boolean().default(true),
+  stops: z.array(routeStopSchema).optional(),
 });
 
 export const updateRouteSchema = createRouteSchema.partial();
 
-// ─── Handlers ───────────────────────────────────────────────────────────────
+function buildRouteIncludes() {
+  return {
+    ward: true,
+    vehicle: true,
+    driver: { select: { id: true, name: true, mobile: true } },
+    supervisor: { select: { id: true, name: true, mobile: true } },
+    stops: {
+      orderBy: { sequence_order: "asc" as const },
+      include: {
+        society: true,
+        photos: {
+          orderBy: { taken_at: "desc" as const },
+          select: {
+            id: true,
+            url: true,
+            lat: true,
+            lng: true,
+            taken_at: true,
+            geofence_valid: true,
+            driver: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function mapRouteProgress(stops: Array<{ status: string }>) {
+  const totalStops = stops.length;
+  const completedStops = stops.filter((s) => s.status === "COMPLETED").length;
+  const skippedStops = stops.filter((s) => s.status === "SKIPPED").length;
+
+  return {
+    total: totalStops,
+    completed: completedStops,
+    skipped: skippedStops,
+    pending: totalStops - completedStops - skippedStops,
+    percentage: totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0,
+  };
+}
+
+async function upsertRouteStops(routeId: string, stops: z.infer<typeof routeStopSchema>[]) {
+  for (const stop of stops) {
+    const stopData = {
+      society_id: stop.society_id ?? null,
+      address: stop.address,
+      lat: stop.lat,
+      lng: stop.lng,
+      bin_type: stop.bin_type,
+      sequence_order: stop.sequence_order,
+    };
+
+    if (stop.id) {
+      await prisma.stop.update({
+        where: { id: stop.id },
+        data: stopData,
+      });
+      continue;
+    }
+
+    await prisma.stop.create({
+      data: {
+        route_id: routeId,
+        ...stopData,
+      },
+    });
+  }
+}
 
 /**
  * GET /api/v1/routes/my-route
- * Get the current shift route for the logged-in driver.
- * Per PRD FR-DRV-01: driver sees assigned route on app launch.
+ * Current route for driver or supervisor.
  */
 export async function getMyRoute(req: Request, res: Response, next: NextFunction) {
   try {
@@ -39,26 +119,6 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
 
     const currentHour = new Date().getHours();
     const currentShift = currentHour < 14 ? Shift.AM : Shift.PM;
-
-    const routeIncludes = {
-      vehicle: {
-        include: {
-          telemetry: {
-            orderBy: { recorded_at: "desc" as const },
-            take: 1,
-          },
-        },
-      },
-      stops: {
-        orderBy: { sequence_order: "asc" as const },
-        include: {
-          society: { select: { name: true, address: true } },
-          photos: { select: { id: true, url: true, geofence_valid: true } },
-        },
-      },
-      ward: { select: { name: true } },
-      supervisor: { select: { id: true, name: true, mobile: true } },
-    };
 
     const routeOwnerFilter =
       userRole === UserRole.SUPERVISOR
@@ -73,7 +133,25 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
         is_active: true,
       },
       orderBy: { created_at: "desc" },
-      include: routeIncludes,
+      include: {
+        vehicle: {
+          include: {
+            telemetry: {
+              orderBy: { recorded_at: "desc" },
+              take: 1,
+            },
+          },
+        },
+        stops: {
+          orderBy: { sequence_order: "asc" },
+          include: {
+            society: { select: { name: true, address: true } },
+            photos: { select: { id: true, url: true, geofence_valid: true } },
+          },
+        },
+        ward: { select: { name: true } },
+        supervisor: { select: { id: true, name: true, mobile: true } },
+      },
     });
 
     if (!route) {
@@ -84,7 +162,54 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
           is_active: true,
         },
         orderBy: [{ date: "desc" }, { created_at: "desc" }],
-        include: routeIncludes,
+        include: {
+          vehicle: {
+            include: {
+              telemetry: {
+                orderBy: { recorded_at: "desc" },
+                take: 1,
+              },
+            },
+          },
+          stops: {
+            orderBy: { sequence_order: "asc" },
+            include: {
+              society: { select: { name: true, address: true } },
+              photos: { select: { id: true, url: true, geofence_valid: true } },
+            },
+          },
+          ward: { select: { name: true } },
+          supervisor: { select: { id: true, name: true, mobile: true } },
+        },
+      });
+    }
+
+    if (!route) {
+      route = await prisma.route.findFirst({
+        where: {
+          ...routeOwnerFilter,
+          is_active: true,
+        },
+        orderBy: [{ date: "desc" }, { created_at: "desc" }],
+        include: {
+          vehicle: {
+            include: {
+              telemetry: {
+                orderBy: { recorded_at: "desc" },
+                take: 1,
+              },
+            },
+          },
+          stops: {
+            orderBy: { sequence_order: "asc" },
+            include: {
+              society: { select: { name: true, address: true } },
+              photos: { select: { id: true, url: true, geofence_valid: true } },
+            },
+          },
+          ward: { select: { name: true } },
+          supervisor: { select: { id: true, name: true, mobile: true } },
+        },
       });
     }
 
@@ -93,10 +218,6 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
       return;
     }
 
-    // Compute route progress stats
-    const totalStops = route.stops.length;
-    const completedStops = route.stops.filter((s) => s.status === "COMPLETED").length;
-    const skippedStops = route.stops.filter((s) => s.status === "SKIPPED").length;
     const latestTelemetry = route.vehicle.telemetry[0];
     const { telemetry, ...vehicle } = route.vehicle;
 
@@ -111,13 +232,7 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
         status: latestTelemetry?.status ?? "IDLE",
         last_update: latestTelemetry?.recorded_at ?? null,
       },
-      progress: {
-        total: totalStops,
-        completed: completedStops,
-        skipped: skippedStops,
-        pending: totalStops - completedStops - skippedStops,
-        percentage: totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0,
-      },
+      progress: mapRouteProgress(route.stops),
     });
   } catch (err) {
     next(err);
@@ -126,7 +241,7 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
 
 /**
  * GET /api/v1/routes
- * List all routes (admin). Supports pagination and filtering.
+ * List all routes (admin).
  */
 export async function listRoutes(req: Request, res: Response, next: NextFunction) {
   try {
@@ -134,7 +249,7 @@ export async function listRoutes(req: Request, res: Response, next: NextFunction
     const wardId = getSingleValue(req.query.ward_id);
     const shift = getSingleValue(req.query.shift) as Shift | undefined;
 
-    const where: Record<string, unknown> = {};
+    const where: Prisma.RouteWhereInput = {};
     if (wardId) where.ward_id = wardId;
     if (shift) where.shift = shift;
 
@@ -163,23 +278,20 @@ export async function listRoutes(req: Request, res: Response, next: NextFunction
 
 /**
  * GET /api/v1/routes/:id
- * Get a single route by ID with all stops.
+ * Route details including proof photos for admin/supervisor review.
  */
 export async function getRoute(req: Request, res: Response, next: NextFunction) {
   try {
     const routeId = getSingleValue(req.params.id)!;
     const route = await prisma.route.findUniqueOrThrow({
       where: { id: routeId },
-      include: {
-        ward: true,
-        vehicle: true,
-        driver: { select: { id: true, name: true, mobile: true } },
-        supervisor: { select: { id: true, name: true, mobile: true } },
-        stops: { orderBy: { sequence_order: "asc" }, include: { society: true } },
-      },
+      include: buildRouteIncludes(),
     });
 
-    sendSuccess(res, route);
+    sendSuccess(res, {
+      ...route,
+      progress: mapRouteProgress(route.stops),
+    });
   } catch (err) {
     next(err);
   }
@@ -187,11 +299,12 @@ export async function getRoute(req: Request, res: Response, next: NextFunction) 
 
 /**
  * POST /api/v1/routes
- * Create a new route (admin only).
+ * Create a route with optional ordered stops.
  */
 export async function createRoute(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = req.body;
+    const { stops = [], ...data } = req.body as z.infer<typeof createRouteSchema>;
+
     const route = await prisma.route.create({
       data: {
         ward_id: data.ward_id,
@@ -201,8 +314,20 @@ export async function createRoute(req: Request, res: Response, next: NextFunctio
         shift: data.shift,
         date: data.date ? new Date(data.date) : new Date(),
         is_active: data.is_active,
+        stops: stops.length
+          ? {
+              create: stops.map((stop) => ({
+                society_id: stop.society_id ?? null,
+                address: stop.address,
+                lat: stop.lat,
+                lng: stop.lng,
+                bin_type: stop.bin_type,
+                sequence_order: stop.sequence_order,
+              })),
+            }
+          : undefined,
       },
-      include: { ward: true, vehicle: true, driver: true },
+      include: buildRouteIncludes(),
     });
 
     await logAudit({
@@ -213,7 +338,10 @@ export async function createRoute(req: Request, res: Response, next: NextFunctio
       newValue: data,
     });
 
-    sendCreated(res, route);
+    sendCreated(res, {
+      ...route,
+      progress: mapRouteProgress(route.stops),
+    });
   } catch (err) {
     next(err);
   }
@@ -221,17 +349,41 @@ export async function createRoute(req: Request, res: Response, next: NextFunctio
 
 /**
  * PATCH /api/v1/routes/:id
- * Update a route (admin only).
+ * Update a route and optionally upsert stop ordering/details.
  */
 export async function updateRoute(req: Request, res: Response, next: NextFunction) {
   try {
     const routeId = getSingleValue(req.params.id)!;
-    const old = await prisma.route.findUniqueOrThrow({ where: { id: routeId } });
-
-    const route = await prisma.route.update({
+    const { stops, ...data } = req.body as z.infer<typeof updateRouteSchema>;
+    const old = await prisma.route.findUniqueOrThrow({
       where: { id: routeId },
-      data: req.body,
-      include: { ward: true, vehicle: true, driver: true },
+      include: {
+        stops: {
+          orderBy: { sequence_order: "asc" },
+        },
+      },
+    });
+
+    await prisma.route.update({
+      where: { id: routeId },
+      data: {
+        ...(data.ward_id !== undefined ? { ward_id: data.ward_id } : {}),
+        ...(data.vehicle_id !== undefined ? { vehicle_id: data.vehicle_id } : {}),
+        ...(data.driver_id !== undefined ? { driver_id: data.driver_id } : {}),
+        ...(data.supervisor_id !== undefined ? { supervisor_id: data.supervisor_id } : {}),
+        ...(data.shift !== undefined ? { shift: data.shift } : {}),
+        ...(data.date !== undefined ? { date: new Date(data.date) } : {}),
+        ...(data.is_active !== undefined ? { is_active: data.is_active } : {}),
+      },
+    });
+
+    if (stops?.length) {
+      await upsertRouteStops(routeId, stops);
+    }
+
+    const route = await prisma.route.findUniqueOrThrow({
+      where: { id: routeId },
+      include: buildRouteIncludes(),
     });
 
     await logAudit({
@@ -239,11 +391,156 @@ export async function updateRoute(req: Request, res: Response, next: NextFunctio
       action: "UPDATE_ROUTE",
       entityType: "Route",
       entityId: route.id,
-      oldValue: old as unknown as Record<string, unknown>,
+      oldValue: old,
       newValue: req.body,
     });
 
-    sendSuccess(res, route);
+    sendSuccess(res, {
+      ...route,
+      progress: mapRouteProgress(route.stops),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/routes/zone
+ * Active routes for a supervisor's ward.
+ */
+export async function getZoneRoutes(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.userId;
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { ward_id: true },
+    });
+
+    if (!user.ward_id) {
+      sendError(res, "No ward assigned to your account. Contact admin.", 400, "NO_WARD");
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const routes = await prisma.route.findMany({
+      where: {
+        ward_id: user.ward_id,
+        is_active: true,
+        date: { gte: today, lt: tomorrow },
+      },
+      include: {
+        vehicle: {
+          include: {
+            telemetry: {
+              orderBy: { recorded_at: "desc" },
+              take: 1,
+            },
+          },
+        },
+        driver: { select: { id: true, name: true, mobile: true } },
+        supervisor: { select: { id: true, name: true } },
+        stops: {
+          orderBy: { sequence_order: "asc" },
+          include: {
+            society: { select: { name: true } },
+            photos: {
+              select: {
+                id: true,
+                url: true,
+                geofence_valid: true,
+              },
+            },
+          },
+        },
+        ward: { select: { name: true } },
+      },
+      orderBy: { created_at: "desc" },
+    });
+
+    const enrichedRoutes = routes.map((route) => {
+      const latestTelemetry = route.vehicle.telemetry[0];
+
+      return {
+        ...route,
+        vehicle: {
+          ...route.vehicle,
+          telemetry: undefined,
+          current_load_kg: latestTelemetry?.current_load_kg ?? 0,
+          load_percent: latestTelemetry
+            ? Math.round((latestTelemetry.current_load_kg / route.vehicle.capacity_kg) * 100)
+            : 0,
+          status: latestTelemetry?.status ?? "IDLE",
+        },
+        progress: mapRouteProgress(route.stops),
+      };
+    });
+
+    sendSuccess(res, enrichedRoutes);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/admin/routes/:id/history
+ * Route audit history.
+ */
+export async function getRouteHistory(req: Request, res: Response, next: NextFunction) {
+  try {
+    const routeId = getSingleValue(req.params.id)!;
+    const { page, limit, skip } = getPagination(req);
+
+    const route = await prisma.route.findUniqueOrThrow({
+      where: { id: routeId },
+      include: {
+        driver: { select: { name: true } },
+        vehicle: { select: { registration_no: true } },
+        ward: { select: { name: true } },
+        stops: { select: { id: true, status: true } },
+      },
+    });
+
+    const stopIds = route.stops.map((stop) => stop.id);
+    const logWhere: Prisma.AuditLogWhereInput = {
+      OR: [
+        { entity_type: "Route", entity_id: routeId },
+        ...(stopIds.length ? [{ entity_type: "Stop", entity_id: { in: stopIds } }] : []),
+      ],
+    };
+
+    const [logs, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where: logWhere,
+        skip,
+        take: limit,
+        orderBy: { created_at: "desc" },
+        include: {
+          actor: { select: { name: true, role: true } },
+        },
+      }),
+      prisma.auditLog.count({ where: logWhere }),
+    ]);
+
+    sendSuccess(
+      res,
+      {
+        route: {
+          id: route.id,
+          driver: route.driver.name,
+          vehicle: route.vehicle.registration_no,
+          ward: route.ward.name,
+          completion_rate: mapRouteProgress(route.stops).percentage,
+          stats: mapRouteProgress(route.stops),
+        },
+        audit_logs: logs,
+      },
+      200,
+      buildPaginationMeta(page, limit, total)
+    );
   } catch (err) {
     next(err);
   }

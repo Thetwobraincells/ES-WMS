@@ -28,16 +28,13 @@ export async function listBacklogs(req: Request, res: Response, next: NextFuncti
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
 
-    const [backlogs, total] = await Promise.all([
+    const [rawBacklogs, total] = await Promise.all([
       prisma.backlogEntry.findMany({
         where,
-        skip,
-        take: limit,
-        orderBy: { created_at: "desc" },
         include: {
           original_stop: {
             include: {
-              society: { select: { name: true, address: true } },
+              society: { select: { id: true, name: true, address: true } },
               route: {
                 select: {
                   ward: { select: { name: true } },
@@ -59,7 +56,42 @@ export async function listBacklogs(req: Request, res: Response, next: NextFuncti
       prisma.backlogEntry.count({ where }),
     ]);
 
-    sendSuccess(res, backlogs, 200, buildPaginationMeta(page, limit, total));
+    const repeatedMissCounts = await prisma.backlogEntry.groupBy({
+      by: ["original_stop_id"],
+      _count: { original_stop_id: true },
+      where,
+    });
+
+    const repeatedMissMap = new Map(
+      repeatedMissCounts.map((entry) => [entry.original_stop_id, entry._count.original_stop_id])
+    );
+
+    const prioritizedBacklogs = rawBacklogs
+      .map((backlog) => {
+        const missedCount = repeatedMissMap.get(backlog.original_stop_id) ?? 1;
+        const ageHours = Math.max(
+          1,
+          Math.round((Date.now() - backlog.created_at.getTime()) / (1000 * 60 * 60))
+        );
+        const urgencyScore =
+          missedCount * 10 +
+          ageHours +
+          (backlog.reason === "TRUCK_FULL" ? 4 : 0) +
+          (backlog.reason === "INACCESSIBLE" ? 2 : 0);
+
+        return {
+          ...backlog,
+          priority: {
+            missed_count: missedCount,
+            urgency_score: urgencyScore,
+          },
+        };
+      })
+      .sort((a, b) => b.priority.urgency_score - a.priority.urgency_score);
+
+    const paginated = prioritizedBacklogs.slice(skip, skip + limit);
+
+    sendSuccess(res, paginated, 200, buildPaginationMeta(page, limit, total));
   } catch (err) {
     next(err);
   }

@@ -18,6 +18,7 @@ import fineRoutes from "./routes/fine.routes";
 import notificationRoutes from "./routes/notification.routes";
 import telemetryRoutes from "./routes/telemetry.routes";
 import adminRoutes from "./routes/admin.routes";
+import alertRoutes from "./routes/alert.routes";
 
 const app = express();
 const allowedOrigins = env.CORS_ORIGIN.split(",")
@@ -73,6 +74,7 @@ app.use("/api/v1/admin/fine-events", fineRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/iot", telemetryRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/admin/alerts", alertRoutes);
 
 // ─── 404 Handler ────────────────────────────────────────────────────────────
 

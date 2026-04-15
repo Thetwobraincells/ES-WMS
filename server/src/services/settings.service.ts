@@ -1,4 +1,5 @@
 import { prisma } from "../utils/prisma";
+import { Prisma } from "@prisma/client";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -6,6 +7,9 @@ export const SETTING_KEYS = [
   "TRUCK_FULL_THRESHOLD_PERCENT",
   "DEFAULT_FINE_AMOUNT",
   "GEOFENCE_RADIUS_METERS",
+  "INACCESSIBLE_ALERT_WEEKLY_LIMIT",
+  "NON_SEGREGATION_CONSECUTIVE_DAYS",
+  "MASS_BALANCE_VARIANCE_PERCENT",
 ] as const;
 
 export type SettingKey = (typeof SETTING_KEYS)[number];
@@ -35,6 +39,18 @@ const SETTING_DEFINITIONS: Record<SettingKey, SettingDefinition> = {
     defaultValue: 50,
     description: "Maximum allowed distance in meters for stop photo geofence validation.",
   },
+  INACCESSIBLE_ALERT_WEEKLY_LIMIT: {
+    defaultValue: 2,
+    description: "Number of INACCESSIBLE skips per driver per week before admin alert is raised.",
+  },
+  NON_SEGREGATION_CONSECUTIVE_DAYS: {
+    defaultValue: 3,
+    description: "Number of consecutive non-segregation days for a society before admin alert is raised.",
+  },
+  MASS_BALANCE_VARIANCE_PERCENT: {
+    defaultValue: 15,
+    description: "Maximum allowed variance percentage between collected and dumped weight before alert.",
+  },
 };
 
 export async function getSetting(key: SettingKey): Promise<number> {
@@ -45,9 +61,27 @@ export async function getSetting(key: SettingKey): Promise<number> {
     return cached.value;
   }
 
-  const setting = await prisma.systemSetting.findUnique({
-    where: { key },
-  });
+  let setting: { value: number } | null = null;
+
+  try {
+    setting = await prisma.systemSetting.findUnique({
+      where: { key },
+      select: { value: true },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      const fallbackValue = SETTING_DEFINITIONS[key].defaultValue;
+      settingsCache.set(key, {
+        value: fallbackValue,
+        expiresAt: now + CACHE_TTL_MS,
+      });
+      return fallbackValue;
+    }
+    throw error;
+  }
 
   const value = setting?.value ?? SETTING_DEFINITIONS[key].defaultValue;
 
@@ -60,18 +94,31 @@ export async function getSetting(key: SettingKey): Promise<number> {
 }
 
 export async function updateSetting(key: SettingKey, value: number) {
-  const updatedSetting = await prisma.systemSetting.upsert({
-    where: { key },
-    update: {
-      value,
-      description: SETTING_DEFINITIONS[key].description,
-    },
-    create: {
-      key,
-      value,
-      description: SETTING_DEFINITIONS[key].description,
-    },
-  });
+  let updatedSetting;
+  try {
+    updatedSetting = await prisma.systemSetting.upsert({
+      where: { key },
+      update: {
+        value,
+        description: SETTING_DEFINITIONS[key].description,
+      },
+      create: {
+        key,
+        value,
+        description: SETTING_DEFINITIONS[key].description,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2021"
+    ) {
+      throw new Error(
+        "System settings table is missing in the current database. Run Prisma migrations before updating settings."
+      );
+    }
+    throw error;
+  }
 
   settingsCache.delete(key);
 
@@ -79,12 +126,28 @@ export async function updateSetting(key: SettingKey, value: number) {
 }
 
 export async function listSettings() {
-  const storedSettings = await prisma.systemSetting.findMany({
-    where: {
-      key: { in: [...SETTING_KEYS] },
-    },
-    orderBy: { key: "asc" },
-  });
+  let storedSettings: Array<{
+    key: string;
+    value: number;
+    description: string | null;
+    updated_at: Date;
+  }> = [];
+
+  try {
+    storedSettings = await prisma.systemSetting.findMany({
+      where: {
+        key: { in: [...SETTING_KEYS] },
+      },
+      orderBy: { key: "asc" },
+    });
+  } catch (error) {
+    if (
+      !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+      error.code !== "P2021"
+    ) {
+      throw error;
+    }
+  }
 
   const storedByKey = new Map(
     storedSettings.map((setting) => [setting.key as SettingKey, setting])

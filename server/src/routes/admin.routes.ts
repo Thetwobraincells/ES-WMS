@@ -10,12 +10,15 @@ import {
   updateUser,
   getMassBalance,
   exportMassBalanceReport,
+  getWasteFlowData,
   createUserSchema,
   updateUserSchema,
 } from "../controllers/admin.controller";
-import { getDashboardSummary, listWards } from "../controllers/dashboard.controller";
+import { getDashboardSummary, listWards, getSkipHeatmap } from "../controllers/dashboard.controller";
 import { listSocieties } from "../controllers/society.controller";
 import { uploadStopsCsv } from "../controllers/bulk.controller";
+import { getAllActiveStops } from "../controllers/stop.controller";
+import { getRouteHistory } from "../controllers/route.controller";
 import {
   listSystemSettings,
   updateSystemSetting,
@@ -39,8 +42,14 @@ router.patch("/users/:id", validate(updateUserSchema), updateUser);
 router.get("/mass-balance/export", exportMassBalanceReport);
 router.get("/mass-balance", getMassBalance);
 
+// Waste flow data for Sankey diagram — FR-ADM-18
+router.get("/waste-flow", getWasteFlowData);
+
 // Dashboard
 router.get("/dashboard", getDashboardSummary);
+
+// Skip frequency heatmap — FR-ADM-05
+router.get("/heatmap/skips", getSkipHeatmap);
 
 // Wards
 router.get("/wards", listWards);
@@ -48,8 +57,14 @@ router.get("/wards", listWards);
 // Societies
 router.get("/societies", listSocieties);
 
+// Stops map layer — FR-ADM-03
+router.get("/stops/map", getAllActiveStops);
+
 // Bulk stop upload
 router.post("/stops/bulk", upload.single("file"), uploadStopsCsv);
+
+// Route history — FR-ADM-09
+router.get("/routes/:id/history", getRouteHistory);
 
 // System settings
 router.get("/settings", listSystemSettings);

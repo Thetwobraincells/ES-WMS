@@ -98,6 +98,7 @@ model User {
   approved_fines      FineEvent[]    @relation("AdminFines")
   audit_logs          AuditLog[]
   society_memberships SocietyMember[]
+  resolved_alerts     AdminAlert[]   @relation("AlertResolver")
 
   @@map("users")
 }
@@ -320,4 +321,37 @@ model SystemSetting {
   updated_at  DateTime @updatedAt
 
   @@map("system_settings")
+}
+
+enum AlertStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum AlertType {
+  FALSE_TRUCK_FULL
+  REPEATED_INACCESSIBLE
+  SUPERVISOR_ABSENCE
+  CONSECUTIVE_NON_SEGREGATION
+  MASS_BALANCE_DISCREPANCY
+}
+
+model AdminAlert {
+  id            String      @id @default(uuid())
+  alert_type    AlertType
+  title         String
+  body          String
+  severity      String      @default("warning") // "info" | "warning" | "critical"
+  reference_id  String?     // entity ID (vehicle, driver, society, etc.)
+  status        AlertStatus @default(OPEN)
+  resolved_by   String?
+  resolved_at   DateTime?
+  created_at    DateTime    @default(now())
+
+  // Relations
+  resolver User? @relation("AlertResolver", fields: [resolved_by], references: [id])
+
+  @@index([status, created_at(sort: Desc)])
+  @@map("admin_alerts")
 }

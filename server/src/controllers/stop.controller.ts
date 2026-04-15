@@ -10,6 +10,11 @@ import { createFineForMixedWaste } from "../services/fine.service";
 import { isWithinGeofence } from "../services/geofence.service";
 import { notifySocietyOfSkip, notifyFalseFullClaim } from "../services/notification.service";
 import { getSetting } from "../services/settings.service";
+import {
+  checkInaccessibleFrequency,
+  checkConsecutiveNonSegregation,
+  createFalseTruckFullAlert,
+} from "../services/alert.service";
 
 export const skipStopSchema = z.object({
   reason: z.nativeEnum(SkipReason),
@@ -56,9 +61,7 @@ export async function listStops(req: Request, res: Response, next: NextFunction)
 
 /**
  * PATCH /api/v1/stops/:id/complete
- * Mark a stop as completed.
- * Per PRD FR-DRV-03: driver can mark complete only after uploading a geotagged photo
- * within the configured geofence radius of stop coordinates.
+ * Driver can mark complete only after uploading a valid proof photo.
  */
 export async function completeStop(req: Request, res: Response, next: NextFunction) {
   try {
@@ -80,7 +83,6 @@ export async function completeStop(req: Request, res: Response, next: NextFuncti
     const validPhotos = stop.photos.filter((photo) => photo.geofence_valid);
     if (validPhotos.length === 0) {
       const geofenceRadiusMeters = await getSetting("GEOFENCE_RADIUS_METERS");
-
       sendError(
         res,
         `Cannot complete stop. Upload a geotagged photo taken within ${geofenceRadiusMeters}m of the stop first.`,
@@ -120,8 +122,7 @@ export async function completeStop(req: Request, res: Response, next: NextFuncti
 
 /**
  * PATCH /api/v1/stops/:id/skip
- * Mark a stop as skipped with a mandatory reason code.
- * Per PRD FR-DRV-04, FR-DRV-05, FR-DRV-17, FR-ADM-11.
+ * Skip stop with automatic backlog, notifications, and alerting.
  */
 export async function skipStop(req: Request, res: Response, next: NextFunction) {
   try {
@@ -157,10 +158,6 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
         const loadPercent = (latestTelemetry.current_load_kg / stop.route.vehicle.capacity_kg) * 100;
 
         if (loadPercent < truckFullThreshold) {
-          console.log(
-            `⚠️ FALSE CLAIM: Driver ${req.user!.userId} claimed TRUCK_FULL at ${loadPercent.toFixed(1)}% load`
-          );
-
           if (stop.route.supervisor) {
             await notifyFalseFullClaim(
               stop.route.supervisor.id,
@@ -169,6 +166,13 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
               Math.round(loadPercent)
             );
           }
+
+          await createFalseTruckFullAlert({
+            driverId: req.user!.userId,
+            driverName: stop.route.driver.name,
+            vehicleId: stop.route.vehicle.registration_no,
+            loadPercent: Math.round(loadPercent),
+          });
         }
       }
     }
@@ -182,10 +186,10 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
       },
     });
 
-    await createBacklogForSkippedStop(stopId, reason);
+    const backlog = await createBacklogForSkippedStop(stopId, reason);
 
     if (stop.society_id) {
-      await notifySocietyOfSkip(stop.society_id, reason, "Next available shift");
+      await notifySocietyOfSkip(stop.society_id, reason, backlog.expectedPickupAt);
 
       if (reason === SkipReason.WASTE_MIXED) {
         await createFineForMixedWaste(stop.society_id, stopId, req.user!.userId);
@@ -198,10 +202,25 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
       entityType: "Stop",
       entityId: stopId,
       oldValue: { status: stop.status },
-      newValue: { status: StopStatus.SKIPPED, skip_reason: reason, notes },
+      newValue: {
+        status: StopStatus.SKIPPED,
+        skip_reason: reason,
+        notes,
+        backlog_id: backlog.backlogId,
+      },
     });
 
-    sendSuccess(res, updated);
+    if (reason === SkipReason.INACCESSIBLE) {
+      checkInaccessibleFrequency(req.user!.userId, stop.route.driver.name).catch(console.error);
+    }
+    if (reason === SkipReason.WASTE_MIXED && stop.society_id && stop.society) {
+      checkConsecutiveNonSegregation(stop.society_id, stop.society.name).catch(console.error);
+    }
+
+    sendSuccess(res, {
+      ...updated,
+      backlog,
+    });
   } catch (err) {
     next(err);
   }
@@ -210,7 +229,6 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
 /**
  * POST /api/v1/stops/:id/photos
  * Upload a geotagged photo for a stop.
- * Per PRD FR-DRV-09/10/11: camera-only, GPS + metadata tagged, geofence validated.
  */
 export async function uploadPhoto(req: Request, res: Response, next: NextFunction) {
   try {
@@ -221,7 +239,12 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
     const stop = await prisma.stop.findUniqueOrThrow({
       where: { id: stopId },
       include: {
-        route: { select: { driver_id: true } },
+        route: {
+          select: {
+            driver_id: true,
+            vehicle_id: true,
+          },
+        },
       },
     });
 
@@ -231,7 +254,6 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
     }
 
     const geofence = isWithinGeofence(lat, lng, stop.lat, stop.lng, geofenceRadiusMeters);
-
     if (!geofence.valid) {
       sendError(
         res,
@@ -263,6 +285,12 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
       res,
       {
         photo,
+        metadata: {
+          stop_id: stopId,
+          driver_id: req.user!.userId,
+          vehicle_id: stop.route.vehicle_id,
+          timestamp: photo.taken_at,
+        },
         geofence: {
           valid: geofence.valid,
           distanceMeters: geofence.distanceMeters,
@@ -270,6 +298,58 @@ export async function uploadPhoto(req: Request, res: Response, next: NextFunctio
       },
       201
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/admin/stops/map
+ * All stops across today's active routes for admin map layer.
+ */
+export async function getAllActiveStops(req: Request, res: Response, next: NextFunction) {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const stops = await prisma.stop.findMany({
+      where: {
+        route: {
+          is_active: true,
+          date: { gte: today },
+        },
+      },
+      select: {
+        id: true,
+        address: true,
+        lat: true,
+        lng: true,
+        status: true,
+        bin_type: true,
+        sequence_order: true,
+        skip_reason: true,
+        photos: {
+          select: {
+            id: true,
+            url: true,
+            taken_at: true,
+            geofence_valid: true,
+          },
+          orderBy: { taken_at: "desc" },
+        },
+        society: { select: { name: true } },
+        route: {
+          select: {
+            id: true,
+            driver: { select: { name: true } },
+            vehicle: { select: { registration_no: true } },
+          },
+        },
+      },
+      orderBy: [{ route_id: "asc" }, { sequence_order: "asc" }],
+    });
+
+    sendSuccess(res, stops);
   } catch (err) {
     next(err);
   }

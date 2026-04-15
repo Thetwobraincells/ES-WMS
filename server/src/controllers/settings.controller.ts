@@ -22,6 +22,9 @@ const settingValueSchemas: Record<SettingKey, z.ZodType<number>> = {
   TRUCK_FULL_THRESHOLD_PERCENT: z.coerce.number().min(0).max(100),
   DEFAULT_FINE_AMOUNT: z.coerce.number().min(0),
   GEOFENCE_RADIUS_METERS: z.coerce.number().positive(),
+  INACCESSIBLE_ALERT_WEEKLY_LIMIT: z.coerce.number().int().min(1).max(50),
+  NON_SEGREGATION_CONSECUTIVE_DAYS: z.coerce.number().int().min(1).max(30),
+  MASS_BALANCE_VARIANCE_PERCENT: z.coerce.number().min(1).max(100),
 };
 
 /**

@@ -9,6 +9,7 @@ import {
   createRoute,
   updateRoute,
   deleteRoute,
+  getZoneRoutes,
   createRouteSchema,
   updateRouteSchema,
 } from "../controllers/route.controller";
@@ -21,6 +22,9 @@ router.use(authenticate);
 
 // Driver: get current shift route
 router.get("/my-route", requireRole(UserRole.DRIVER, UserRole.SUPERVISOR), getMyRoute);
+
+// Supervisor: get all zone routes for their ward — FR-DRV-07
+router.get("/zone", requireRole(UserRole.SUPERVISOR), getZoneRoutes);
 
 // Admin: list all routes
 router.get("/", requireRole(UserRole.ADMIN), listRoutes);

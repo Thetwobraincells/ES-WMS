@@ -1,5 +1,5 @@
+import { NotificationType, SkipReason } from "@prisma/client";
 import { prisma } from "../utils/prisma";
-import { NotificationType } from "@prisma/client";
 
 interface CreateNotificationParams {
   targetUserId?: string;
@@ -9,10 +9,50 @@ interface CreateNotificationParams {
   body: string;
 }
 
+function formatDateForNotification(value: Date | null | undefined) {
+  if (!value) {
+    return "Next available shift";
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(value);
+}
+
+function getSkipReasonTranslations(reason: SkipReason | string) {
+  switch (reason) {
+    case SkipReason.WASTE_MIXED:
+      return {
+        english: "Waste was not segregated properly.",
+        hindi: "Kachra alag-alag nahi kiya gaya tha.",
+        marathi: "Kachara yogya prakarane vegala kela navhta.",
+      };
+    case SkipReason.TRUCK_FULL:
+      return {
+        english: "Truck reached full capacity.",
+        hindi: "Gaadi ki capacity poori ho gayi thi.",
+        marathi: "Gaadi purna kshamateparyant bharli hoti.",
+      };
+    case SkipReason.INACCESSIBLE:
+      return {
+        english: "Pickup point was inaccessible.",
+        hindi: "Collection point tak pahunch sambhav nahi thi.",
+        marathi: "Collection point par pohachane shakya navhate.",
+      };
+    default:
+      return {
+        english: "Collection was skipped for an operational reason.",
+        hindi: "Collection ek operational wajah se skip hua.",
+        marathi: "Collection operation sambandhit karanane skip jhale.",
+      };
+  }
+}
+
 /**
  * Create a notification record.
  * In production, this would also trigger FCM push notification delivery.
- * For MVP, we just persist to DB (PRD FR-CIT-02 — push within 2 minutes).
  */
 export async function createNotification(params: CreateNotificationParams) {
   const notification = await prisma.notification.create({
@@ -25,62 +65,55 @@ export async function createNotification(params: CreateNotificationParams) {
     },
   });
 
-  console.log(`🔔 Notification created: [${params.type}] ${params.title}`);
-
-  // TODO: trigger FCM push notification here
-  // await sendFcmPush(params.targetUserId, params.title, params.body);
-
+  console.log(`Notification created: [${params.type}] ${params.title}`);
   return notification;
 }
 
 /**
  * Notify all citizens of a society about a skip event.
- * Per PRD FR-CIT-02: push notification with reason + expected backlog date.
+ * Per PRD FR-CIT-02: push notification with translated reason + expected backlog date.
  */
 export async function notifySocietyOfSkip(
   societyId: string,
-  reason: string,
-  backlogDate?: string
+  reason: SkipReason,
+  expectedPickupAt?: Date | null
 ) {
-  // Get all citizen members of this society
   const members = await prisma.societyMember.findMany({
     where: { society_id: societyId },
     include: { user: true },
   });
 
-  const bodyParts = [`Reason: ${reason}`];
-  if (backlogDate) {
-    bodyParts.push(`Expected next pickup: ${backlogDate}`);
-  }
+  const translatedReason = getSkipReasonTranslations(reason);
+  const pickupDate = formatDateForNotification(expectedPickupAt);
+  const body =
+    `Reason: ${translatedReason.english} ` +
+    `Hindi: ${translatedReason.hindi} ` +
+    `Marathi: ${translatedReason.marathi} ` +
+    `Expected next pickup: ${pickupDate}.`;
 
-  // Create notification for the society
   await createNotification({
     targetSocietyId: societyId,
     type: NotificationType.SKIP_ALERT,
     title: "Collection Skipped for Your Society",
-    body: bodyParts.join(". "),
+    body,
   });
 
-  // Create individual notifications for each member
   for (const member of members) {
     if (member.user.is_active) {
       await createNotification({
         targetUserId: member.user_id,
         type: NotificationType.SKIP_ALERT,
         title: "Today's Waste Collection Was Skipped",
-        body: bodyParts.join(". "),
+        body,
       });
     }
   }
 
-  console.log(
-    `📨 Notified ${members.length} member(s) of society ${societyId} about skip.`
-  );
+  console.log(`Notified ${members.length} member(s) of society ${societyId} about skip.`);
 }
 
 /**
  * Notify supervisor about a suspicious truck-full claim.
- * Per PRD FR-DRV-17.
  */
 export async function notifyFalseFullClaim(
   supervisorId: string,
@@ -91,7 +124,7 @@ export async function notifyFalseFullClaim(
   await createNotification({
     targetUserId: supervisorId,
     type: NotificationType.FALSE_CLAIM_ALERT,
-    title: "⚠️ Suspicious Truck Full Claim",
+    title: "Suspicious Truck Full Claim",
     body: `Driver ${driverName} claimed TRUCK_FULL but vehicle ${vehicleId} is only at ${loadPercent}% capacity.`,
   });
 }
