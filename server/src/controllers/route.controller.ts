@@ -25,12 +25,8 @@ export const createRouteSchema = z.object({
   shift: z.nativeEnum(Shift),
   date: z.string().optional(),
   is_active: z.boolean().default(true),
-<<<<<<< Updated upstream
   stops: z.array(routeStopSchema).optional(),
-});
-=======
 }).passthrough();
->>>>>>> Stashed changes
 
 export const updateRouteSchema = createRouteSchema.partial();
 
