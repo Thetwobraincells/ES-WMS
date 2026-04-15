@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertsList } from "@/components/alerts/AlertsList";
 import { getAlerts, updateAlertStatus, type AlertItem, type AlertStatus } from "@/services/alerts.service";
+import { RefreshCw } from "lucide-react";
 
 export function AlertsPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
@@ -50,35 +51,34 @@ export function AlertsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <main className="min-h-screen bg-surface p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
         <header className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Alerts Center</h1>
-            <p className="text-sm text-gray-600">Monitor and action operational alerts.</p>
+            <h1 className="text-2xl font-bold text-gray-900">Alerts Center</h1>
+            <p className="text-sm text-gray-500">Monitor and action operational alerts</p>
           </div>
-          <Button className="bg-gray-200 text-gray-800" onClick={loadAlerts}>
+          <Button variant="secondary" onClick={loadAlerts}>
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
         </header>
 
-        <Card className="rounded-2xl p-4 shadow-md">
+        <Card className="p-4">
           <div className="grid gap-3 md:grid-cols-3">
             <select
-              className="h-11 rounded-lg border border-transparent bg-gray-100 px-3 text-sm"
+              className="h-11 rounded-xl border border-surface-border bg-surface px-3 text-sm outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
               value={typeFilter}
               onChange={(event) => setTypeFilter(event.target.value)}
             >
               <option value="">All types</option>
               {types.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
+                <option key={type} value={type}>{type}</option>
               ))}
             </select>
 
             <select
-              className="h-11 rounded-lg border border-transparent bg-gray-100 px-3 text-sm"
+              className="h-11 rounded-xl border border-surface-border bg-surface px-3 text-sm outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as "" | AlertStatus)}
             >
@@ -90,11 +90,11 @@ export function AlertsPage() {
         </Card>
 
         {error ? (
-          <Card className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 shadow-md">{error}</Card>
+          <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</Card>
         ) : null}
 
         {loading ? (
-          <Card className="rounded-2xl p-6 text-sm text-gray-600 shadow-md">Loading alerts...</Card>
+          <Card className="p-8 text-center text-sm text-gray-500">Loading alerts...</Card>
         ) : (
           <AlertsList
             alerts={alerts}

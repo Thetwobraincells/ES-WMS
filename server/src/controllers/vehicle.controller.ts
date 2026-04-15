@@ -24,7 +24,8 @@ export async function getLiveVehicles(req: Request, res: Response, next: NextFun
             driver: { select: { id: true, name: true } },
             _count: { select: { stops: true } },
             stops: {
-              select: { status: true },
+              select: { id: true, lat: true, lng: true, sequence_order: true, status: true, address: true },
+              orderBy: { sequence_order: "asc" },
             },
           },
         },
@@ -52,10 +53,19 @@ export async function getLiveVehicles(req: Request, res: Response, next: NextFun
         status: latest?.status ?? "IDLE",
         last_update: latest?.recorded_at ?? null,
         driver: activeRoute?.driver ?? null,
+        route_id: activeRoute?.id ?? null,
         route_progress: {
           completed: completedStops,
           total: totalStops,
         },
+        route_stops: (activeRoute?.stops ?? []).map((s) => ({
+          id: s.id,
+          lat: s.lat,
+          lng: s.lng,
+          sequence_order: s.sequence_order,
+          status: s.status,
+          address: s.address,
+        })),
       };
     });
 

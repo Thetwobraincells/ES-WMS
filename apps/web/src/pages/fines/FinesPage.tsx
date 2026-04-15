@@ -9,6 +9,7 @@ import {
   rejectFine,
   type FineEvent,
 } from "@/services/fine.service";
+import { RefreshCw } from "lucide-react";
 
 export function FinesPage() {
   const [fines, setFines] = useState<FineEvent[]>([]);
@@ -67,24 +68,25 @@ export function FinesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <main className="min-h-screen bg-surface p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
         <header className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Fine Events Dashboard</h1>
-            <p className="text-sm text-gray-600">Review fine events and approve or reject pending actions.</p>
+            <h1 className="text-2xl font-bold text-gray-900">Fine Events</h1>
+            <p className="text-sm text-gray-500">Review, approve, or reject pending fine actions</p>
           </div>
-          <Button className="bg-gray-200 text-gray-800" onClick={loadFines}>
+          <Button variant="secondary" onClick={loadFines}>
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
         </header>
 
         {error ? (
-          <Card className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 shadow-md">{error}</Card>
+          <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</Card>
         ) : null}
 
         {loading ? (
-          <Card className="rounded-2xl p-6 text-sm text-gray-600 shadow-md">Loading fine events...</Card>
+          <Card className="p-8 text-center text-sm text-gray-500">Loading fine events...</Card>
         ) : (
           <FineEventsTable
             fines={fines}

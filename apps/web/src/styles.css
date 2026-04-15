@@ -2,10 +2,100 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design System Custom Properties ─────────────────────────────── */
 :root {
-  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 72px;
+  --topbar-height: 0px;
+  color-scheme: light;
 }
 
 body {
   margin: 0;
+  background: #F8FAFC;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+::selection {
+  background: rgba(46, 125, 50, 0.15);
+  color: #1B5E20;
+}
+
+/* ─── Utility Layers ──────────────────────────────────────────────── */
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  .glass-dark {
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .gradient-brand {
+    background: linear-gradient(135deg, #2E7D32 0%, #43A047 50%, #66BB6A 100%);
+  }
+
+  .gradient-surface {
+    background: linear-gradient(180deg, #F8FAFC 0%, #F1F5F9 100%);
+  }
+
+  .gradient-login {
+    background: linear-gradient(135deg, #0F172A 0%, #1E3A2F 40%, #1B5E20 100%);
+  }
+
+  .stat-card-1 { background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%); }
+  .stat-card-2 { background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); }
+  .stat-card-3 { background: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); }
+  .stat-card-4 { background: linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%); }
+
+  .shine {
+    position: relative;
+    overflow: hidden;
+  }
+  .shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 40%,
+      rgba(255, 255, 255, 0.15) 45%,
+      rgba(255, 255, 255, 0.05) 55%,
+      transparent 60%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+}
+
+/* ─── Smooth Transitions ──────────────────────────────────────────── */
+* {
+  transition-property: background-color, border-color, color, box-shadow, opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
 }

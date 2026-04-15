@@ -1,10 +1,12 @@
-import { FileText } from "lucide-react";
+import { type ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Download } from "lucide-react";
 
 type ReportCardProps = {
   title: string;
   description: string;
+  icon?: ReactNode;
   onCsv: () => Promise<void> | void;
   onPdf: () => Promise<void> | void;
   csvDisabled?: boolean;
@@ -16,6 +18,7 @@ type ReportCardProps = {
 export function ReportCard({
   title,
   description,
+  icon,
   onCsv,
   onPdf,
   csvDisabled,
@@ -24,26 +27,36 @@ export function ReportCard({
   loadingPdf,
 }: ReportCardProps) {
   return (
-    <Card className="rounded-2xl p-4 shadow-md">
-      <div className="mb-3 flex items-start gap-2">
-        <div className="rounded-full bg-[#E8F5E9] p-2 text-[#2E7D32]">
-          <FileText className="h-4 w-4" />
-        </div>
+    <Card className="p-5">
+      <div className="mb-4 flex items-start gap-3">
+        {icon ? (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface">
+            {icon}
+          </div>
+        ) : null}
         <div>
-          <h3 className="font-semibold text-gray-900">{title}</h3>
-          <p className="text-sm text-gray-600">{description}</p>
+          <h3 className="text-sm font-bold text-gray-900">{title}</h3>
+          <p className="mt-0.5 text-xs text-gray-500">{description}</p>
         </div>
       </div>
 
       <div className="flex gap-2">
         <Button
-          className="border border-gray-300 bg-white text-gray-700"
+          variant="secondary"
           onClick={onCsv}
           disabled={csvDisabled || loadingCsv}
+          className="text-xs"
         >
+          <Download className="h-3.5 w-3.5" />
           {loadingCsv ? "Exporting..." : "CSV"}
         </Button>
-        <Button className="bg-[#2E7D32] text-white" onClick={onPdf} disabled={pdfDisabled || loadingPdf}>
+        <Button
+          variant="primary"
+          onClick={onPdf}
+          disabled={pdfDisabled || loadingPdf}
+          className="text-xs"
+        >
+          <Download className="h-3.5 w-3.5" />
           {loadingPdf ? "Exporting..." : "PDF"}
         </Button>
       </div>

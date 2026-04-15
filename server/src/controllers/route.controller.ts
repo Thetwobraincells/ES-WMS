@@ -18,15 +18,19 @@ const routeStopSchema = z.object({
 });
 
 export const createRouteSchema = z.object({
-  ward_id: z.string().uuid(),
-  vehicle_id: z.string().uuid(),
-  driver_id: z.string().uuid(),
-  supervisor_id: z.string().uuid().optional(),
+  ward_id: z.string().min(1),
+  vehicle_id: z.string().min(1),
+  driver_id: z.string().min(1),
+  supervisor_id: z.string().optional().or(z.literal("")),
   shift: z.nativeEnum(Shift),
   date: z.string().optional(),
   is_active: z.boolean().default(true),
+<<<<<<< Updated upstream
   stops: z.array(routeStopSchema).optional(),
 });
+=======
+}).passthrough();
+>>>>>>> Stashed changes
 
 export const updateRouteSchema = createRouteSchema.partial();
 

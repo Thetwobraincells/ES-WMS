@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { BacklogTable } from "@/components/backlog/BacklogTable";
 import { getBacklogs, reassignBacklog, type BacklogItem } from "@/services/backlog.service";
 import { getRoutes, type RouteRecord } from "@/services/route.service";
+import { RefreshCw } from "lucide-react";
 
 function priorityRank(priority?: string) {
   if (priority === "HIGH") return 0;
@@ -59,26 +60,25 @@ export function BacklogPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <main className="min-h-screen bg-surface p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
         <header className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Backlog Queue</h1>
-            <p className="text-sm text-gray-600">Sort by priority and reassign pending backlog stops.</p>
+            <h1 className="text-2xl font-bold text-gray-900">Backlog Queue</h1>
+            <p className="text-sm text-gray-500">Sort by priority and reassign pending backlog stops</p>
           </div>
-          <Button className="bg-gray-200 text-gray-800" onClick={loadData}>
+          <Button variant="secondary" onClick={loadData}>
+            <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
         </header>
 
         {error ? (
-          <Card className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 shadow-md">
-            {error}
-          </Card>
+          <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</Card>
         ) : null}
 
         {loading ? (
-          <Card className="rounded-2xl p-6 text-sm text-gray-600 shadow-md">Loading backlog queue...</Card>
+          <Card className="p-8 text-center text-sm text-gray-500">Loading backlog queue...</Card>
         ) : (
           <BacklogTable
             items={sortedItems}
@@ -98,12 +98,13 @@ export function BacklogPage() {
         )}
       </div>
 
-      <Card className="sticky bottom-4 mx-auto mt-4 flex max-w-7xl items-center gap-3 rounded-2xl p-4 shadow-md">
-        <div className="text-sm text-gray-700">
-          {selectedIds.length} selected for bulk action
+      {/* Sticky bulk-action bar */}
+      <Card className="glass sticky bottom-4 mx-auto mt-5 flex max-w-7xl items-center gap-3 p-4">
+        <div className="text-sm font-medium text-gray-700">
+          <span className="font-bold text-brand-600">{selectedIds.length}</span> selected
         </div>
         <select
-          className="h-10 min-w-[220px] rounded-lg border border-transparent bg-gray-100 px-3 text-sm"
+          className="h-10 min-w-[220px] rounded-xl border border-surface-border bg-surface px-3 text-sm outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
           value={selectedRouteId}
           onChange={(event) => setSelectedRouteId(event.target.value)}
         >
@@ -115,7 +116,7 @@ export function BacklogPage() {
           ))}
         </select>
         <Button
-          className="bg-[#2E7D32] text-white"
+          variant="primary"
           disabled={saving || selectedIds.length === 0 || !selectedRouteId}
           onClick={() => handleReassign(selectedIds)}
         >

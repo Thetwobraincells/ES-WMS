@@ -10,6 +10,7 @@ import {
   type UserRecord,
   type UserRole,
 } from "@/services/user.service";
+import { Plus } from "lucide-react";
 
 const roleOptions: Array<{ label: string; value: "ALL" | UserRole }> = [
   { label: "All Roles", value: "ALL" },
@@ -60,7 +61,6 @@ export function UsersPage() {
       if (modalMode === "create") {
         await createUser(payload);
       } else if (selectedUser) {
-        // Role updates are intentionally excluded for edit mode.
         await updateUser(selectedUser.id, {
           name: payload.name,
           mobile: payload.mobile,
@@ -93,47 +93,52 @@ export function UsersPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <main className="min-h-screen bg-surface p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">User Management</h1>
-            <p className="text-sm text-gray-600">Create, update, and deactivate command center users.</p>
+            <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+            <p className="text-sm text-gray-500">Create, update, and manage command center accounts</p>
           </div>
           <Button
-            className="bg-[#2E7D32] text-white"
+            variant="primary"
             onClick={() => {
               setModalMode("create");
               setSelectedUser(null);
               setModalOpen(true);
             }}
           >
+            <Plus className="h-4 w-4" />
             Create User
           </Button>
         </header>
 
-        <Card className="rounded-2xl p-4 shadow-md">
+        {/* Role filter pills */}
+        <Card className="p-4">
           <div className="flex flex-wrap items-center gap-2">
             {roleOptions.map((option) => (
-              <Button
+              <button
                 key={option.value}
-                className={roleFilter === option.value ? "bg-[#2E7D32] text-white" : "bg-gray-200 text-gray-800"}
+                type="button"
                 onClick={() => setRoleFilter(option.value)}
+                className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+                  roleFilter === option.value
+                    ? "bg-brand-500 text-white shadow-sm"
+                    : "bg-surface text-gray-600 hover:bg-surface-hover"
+                }`}
               >
                 {option.label}
-              </Button>
+              </button>
             ))}
           </div>
         </Card>
 
         {error ? (
-          <Card className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 shadow-md">
-            {error}
-          </Card>
+          <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</Card>
         ) : null}
 
         {loading ? (
-          <Card className="rounded-2xl p-6 text-sm text-gray-600 shadow-md">Loading users...</Card>
+          <Card className="p-8 text-center text-sm text-gray-500">Loading users...</Card>
         ) : (
           <UserTable
             users={users}

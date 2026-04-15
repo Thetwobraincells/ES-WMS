@@ -15,6 +15,7 @@ import {
   type RouteRecord,
   type Shift,
 } from "@/services/route.service";
+import { Plus, Search } from "lucide-react";
 
 export function RoutesPage() {
   const [routes, setRoutes] = useState<RouteRecord[]>([]);
@@ -102,35 +103,40 @@ export function RoutesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <main className="min-h-screen bg-surface p-6">
+      <div className="mx-auto max-w-7xl space-y-5">
         <header className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Route Management</h1>
-            <p className="text-sm text-gray-600">Create, edit, and maintain route assignments.</p>
+            <h1 className="text-2xl font-bold text-gray-900">Route Management</h1>
+            <p className="text-sm text-gray-500">Create, edit, and maintain route assignments</p>
           </div>
           <Button
-            className="bg-[#2E7D32] text-white"
+            variant="primary"
             onClick={() => {
               setModalMode("create");
               setSelectedRoute(null);
               setModalOpen(true);
             }}
           >
+            <Plus className="h-4 w-4" />
             Create Route
           </Button>
         </header>
 
-        <Card className="rounded-2xl p-4 shadow-md">
+        {/* Filters */}
+        <Card className="p-4">
           <div className="grid gap-3 md:grid-cols-4">
-            <input
-              className="h-11 rounded-lg border border-transparent bg-gray-100 px-3 text-sm outline-none"
-              placeholder="Search by ward, vehicle, driver..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                className="h-11 w-full rounded-xl border border-surface-border bg-surface pl-9 pr-3 text-sm outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
+                placeholder="Search by ward, vehicle, driver..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
             <select
-              className="h-11 rounded-lg border border-transparent bg-gray-100 px-3 text-sm"
+              className="h-11 rounded-xl border border-surface-border bg-surface px-3 text-sm outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
               value={shiftFilter}
               onChange={(event) => setShiftFilter(event.target.value as "" | Shift)}
             >
@@ -139,31 +145,27 @@ export function RoutesPage() {
               <option value="PM">PM</option>
             </select>
             <select
-              className="h-11 rounded-lg border border-transparent bg-gray-100 px-3 text-sm"
+              className="h-11 rounded-xl border border-surface-border bg-surface px-3 text-sm outline-none focus:border-brand-500/40 focus:ring-2 focus:ring-brand-500/20"
               value={wardFilter}
               onChange={(event) => setWardFilter(event.target.value)}
             >
               <option value="">All wards</option>
               {wards.map((ward) => (
-                <option key={ward.id} value={ward.id}>
-                  {ward.name}
-                </option>
+                <option key={ward.id} value={ward.id}>{ward.name}</option>
               ))}
             </select>
-            <Button className="bg-gray-200 text-gray-800" onClick={loadAll}>
+            <Button variant="secondary" onClick={loadAll}>
               Apply Filters
             </Button>
           </div>
         </Card>
 
         {error ? (
-          <Card className="rounded-2xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 shadow-md">
-            {error}
-          </Card>
+          <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</Card>
         ) : null}
 
         {loading ? (
-          <Card className="rounded-2xl p-6 text-sm text-gray-600 shadow-md">Loading routes...</Card>
+          <Card className="p-8 text-center text-sm text-gray-500">Loading routes...</Card>
         ) : (
           <RoutesTable
             routes={filteredRoutes}

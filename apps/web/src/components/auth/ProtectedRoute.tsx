@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 
 export function ProtectedRoute() {
   const { isAuthenticated, user } = useAuth();
@@ -12,5 +13,9 @@ export function ProtectedRoute() {
     return <Navigate to="/login" replace />;
   }
 
-  return <Outlet />;
+  return (
+    <DashboardLayout>
+      <Outlet />
+    </DashboardLayout>
+  );
 }

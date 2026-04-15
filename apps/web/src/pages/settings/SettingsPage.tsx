@@ -9,6 +9,7 @@ import {
   type SystemSetting,
   type SystemSettingKey,
 } from "@/services/settings.service";
+import { Save } from "lucide-react";
 
 type SettingsForm = {
   geofence_radius: string;
@@ -82,22 +83,22 @@ export function SettingsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F7F6] p-6">
-      <div className="mx-auto max-w-5xl space-y-4">
+    <main className="min-h-screen bg-surface p-6">
+      <div className="mx-auto max-w-5xl space-y-5">
         <header>
-          <h1 className="text-2xl font-semibold text-gray-900">Settings Panel</h1>
-          <p className="text-sm text-gray-600">Configure operational thresholds and notification defaults.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500">Configure operational thresholds and notification defaults</p>
         </header>
 
         {error ? (
-          <Card className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 shadow-md">{error}</Card>
+          <Card className="border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</Card>
         ) : null}
         {success ? (
-          <Card className="rounded-xl border border-green-100 bg-green-50 p-3 text-sm text-green-700 shadow-md">{success}</Card>
+          <Card className="border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{success}</Card>
         ) : null}
 
         {loading ? (
-          <Card className="rounded-xl p-4 text-sm text-gray-600 shadow-md">Loading settings...</Card>
+          <Card className="p-8 text-center text-sm text-gray-500">Loading settings...</Card>
         ) : (
           <>
             <SettingsSectionCard
@@ -138,10 +139,10 @@ export function SettingsPage() {
 
             <SettingsSectionCard
               title="Notification Templates"
-              description="Template preview for operational notifications (non-persistent in current API contract)."
+              description="Template preview for operational notifications (read-only)."
             >
               <textarea
-                className="min-h-[120px] w-full rounded-lg border border-transparent bg-gray-100 p-3 text-sm text-gray-700 outline-none"
+                className="min-h-[120px] w-full rounded-xl border border-surface-border bg-surface p-3.5 text-sm text-gray-700 outline-none"
                 value={form.notification_templates}
                 onChange={(event) => setForm((prev) => ({ ...prev, notification_templates: event.target.value }))}
                 readOnly
@@ -151,8 +152,9 @@ export function SettingsPage() {
         )}
       </div>
 
-      <div className="sticky bottom-4 mt-4 flex justify-end">
-        <Button className="bg-[#2E7D32] text-white shadow-md" onClick={handleSave} disabled={saving || loading}>
+      <div className="sticky bottom-4 mx-auto mt-5 flex max-w-5xl justify-end">
+        <Button variant="primary" onClick={handleSave} disabled={saving || loading}>
+          <Save className="h-4 w-4" />
           {saving ? "Saving..." : "Save Configuration"}
         </Button>
       </div>

@@ -1,5 +1,14 @@
 import { apiRequest } from "@/services/api";
 
+export type RouteStop = {
+  id: string;
+  lat: number;
+  lng: number;
+  sequence_order: number;
+  status: string;
+  address: string;
+};
+
 export type LiveVehicle = {
   id: string;
   registration_no: string;
@@ -10,10 +19,12 @@ export type LiveVehicle = {
   status: string;
   last_update: string | null;
   driver: { id: string; name: string } | null;
+  route_id: string | null;
   route_progress: {
     completed: number;
     total: number;
   };
+  route_stops: RouteStop[];
 };
 
 export async function getLiveVehicles() {

@@ -10,6 +10,7 @@ import { AlertsPage } from "@/pages/alerts/AlertsPage";
 import { MassBalancePage } from "@/pages/reports/MassBalancePage";
 import { ReportsPage } from "@/pages/reports/ReportsPage";
 import { SettingsPage } from "@/pages/settings/SettingsPage";
+import { SocietiesPage } from "@/pages/societies/SocietiesPage";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/backlog" element={<BacklogPage />} />
             <Route path="/fines" element={<FinesPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/societies" element={<SocietiesPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/reports/mass-balance" element={<MassBalancePage />} />
             <Route path="/settings" element={<SettingsPage />} />
