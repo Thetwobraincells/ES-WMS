@@ -132,7 +132,7 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
         shift: currentShift,
         is_active: true,
       },
-      orderBy: { updated_at: "desc" },
+      orderBy: { created_at: "desc" },
       include: {
         vehicle: {
           include: {
@@ -161,7 +161,7 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
           date: { gte: startOfToday, lt: endOfToday },
           is_active: true,
         },
-        orderBy: [{ date: "desc" }, { updated_at: "desc" }],
+        orderBy: [{ date: "desc" }, { created_at: "desc" }],
         include: {
           vehicle: {
             include: {
@@ -190,7 +190,7 @@ export async function getMyRoute(req: Request, res: Response, next: NextFunction
           ...routeOwnerFilter,
           is_active: true,
         },
-        orderBy: [{ date: "desc" }, { updated_at: "desc" }],
+        orderBy: [{ date: "desc" }, { created_at: "desc" }],
         include: {
           vehicle: {
             include: {
