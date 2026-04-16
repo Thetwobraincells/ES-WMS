@@ -199,10 +199,12 @@ export default function RouteOverview() {
   const [refreshing, setRefreshing] = useState(false);
   const [ecoTip]     = useState(() => ECO_TIPS[Math.floor(Math.random() * ECO_TIPS.length)]);
 
-  // Fetch route on mount
+  // Fetch route on mount and automatically poll every 10s
   useEffect(() => {
     fetchMyRoute();
-  }, []);
+    const intervalId = setInterval(() => fetchMyRoute(), 10000);
+    return () => clearInterval(intervalId);
+  }, [fetchMyRoute]);
 
   // Pull-to-refresh
   const onRefresh = useCallback(async () => {

@@ -78,34 +78,34 @@ enum NotificationType {
 // ─── Models ─────────────────────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(uuid())
+  id            String   @id @default(uuid())
   role          UserRole
   name          String
-  mobile        String?   @unique
-  email         String?   @unique
+  mobile        String?  @unique
+  email         String?  @unique
   password_hash String?
-  is_active     Boolean   @default(true)
+  is_active     Boolean  @default(true)
   ward_id       String?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
   // Relations
-  ward                Ward?          @relation(fields: [ward_id], references: [id])
-  driven_routes       Route[]        @relation("DriverRoutes")
-  supervised_routes   Route[]        @relation("SupervisorRoutes")
+  ward                Ward?           @relation(fields: [ward_id], references: [id])
+  driven_routes       Route[]         @relation("DriverRoutes")
+  supervised_routes   Route[]         @relation("SupervisorRoutes")
   stop_photos         StopPhoto[]
-  notifications       Notification[] @relation("UserNotifications")
-  approved_fines      FineEvent[]    @relation("AdminFines")
+  notifications       Notification[]  @relation("UserNotifications")
+  approved_fines      FineEvent[]     @relation("AdminFines")
   audit_logs          AuditLog[]
   society_memberships SocietyMember[]
-  resolved_alerts     AdminAlert[]   @relation("AlertResolver")
+  resolved_alerts     AdminAlert[]    @relation("AlertResolver")
 
   @@map("users")
 }
 
 model Ward {
-  id         String  @id @default(uuid())
-  name       String  @unique
+  id         String @id @default(uuid())
+  name       String @unique
   zone       String
   area_sq_km Float?
 
@@ -141,13 +141,14 @@ model Route {
   date          DateTime @default(now()) @db.Date
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
+  updated_at    DateTime @default(now()) @updatedAt
 
   // Relations
-  ward           Ward          @relation(fields: [ward_id], references: [id])
-  vehicle        Vehicle       @relation(fields: [vehicle_id], references: [id])
-  driver         User          @relation("DriverRoutes", fields: [driver_id], references: [id])
-  supervisor     User?         @relation("SupervisorRoutes", fields: [supervisor_id], references: [id])
-  stops          Stop[]
+  ward            Ward           @relation(fields: [ward_id], references: [id])
+  vehicle         Vehicle        @relation(fields: [vehicle_id], references: [id])
+  driver          User           @relation("DriverRoutes", fields: [driver_id], references: [id])
+  supervisor      User?          @relation("SupervisorRoutes", fields: [supervisor_id], references: [id])
+  stops           Stop[]
   backlog_entries BacklogEntry[] @relation("NewRouteBacklogs")
 
   @@map("routes")
@@ -202,11 +203,11 @@ model Stop {
   created_at     DateTime    @default(now())
 
   // Relations
-  route          Route          @relation(fields: [route_id], references: [id])
-  society        Society?       @relation(fields: [society_id], references: [id])
-  photos         StopPhoto[]
+  route           Route          @relation(fields: [route_id], references: [id])
+  society         Society?       @relation(fields: [society_id], references: [id])
+  photos          StopPhoto[]
   backlog_entries BacklogEntry[]
-  fine_events    FineEvent[]
+  fine_events     FineEvent[]
 
   @@map("stops")
 }
@@ -338,16 +339,16 @@ enum AlertType {
 }
 
 model AdminAlert {
-  id            String      @id @default(uuid())
-  alert_type    AlertType
-  title         String
-  body          String
-  severity      String      @default("warning") // "info" | "warning" | "critical"
-  reference_id  String?     // entity ID (vehicle, driver, society, etc.)
-  status        AlertStatus @default(OPEN)
-  resolved_by   String?
-  resolved_at   DateTime?
-  created_at    DateTime    @default(now())
+  id           String      @id @default(uuid())
+  alert_type   AlertType
+  title        String
+  body         String
+  severity     String      @default("warning") // "info" | "warning" | "critical"
+  reference_id String? // entity ID (vehicle, driver, society, etc.)
+  status       AlertStatus @default(OPEN)
+  resolved_by  String?
+  resolved_at  DateTime?
+  created_at   DateTime    @default(now())
 
   // Relations
   resolver User? @relation("AlertResolver", fields: [resolved_by], references: [id])
