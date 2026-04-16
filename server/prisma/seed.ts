@@ -453,6 +453,60 @@ async function main() {
     suffix: "seed-history-stop-1",
   });
 
+  // Extra route for Driver 1 on the Alternate Shift
+  const primaryRouteAlternate = await prisma.route.create({
+    data: {
+      ward_id: wardEast.id,
+      vehicle_id: vehicles[0].id,
+      driver_id: drivers[0].id,
+      supervisor_id: supervisors[0].id,
+      shift: alternateShift,
+      date: today,
+    },
+  });
+
+  for (const [index, society] of societies.slice(1, 5).entries()) {
+    await prisma.stop.create({
+      data: {
+        route_id: primaryRouteAlternate.id,
+        society_id: society.id,
+        address: society.address,
+        lat: society.lat,
+        lng: society.lng,
+        bin_type: index % 2 === 0 ? "MIXED" : "WET",
+        sequence_order: index + 1,
+        status: "PENDING",
+      },
+    });
+  }
+
+  // Extra route for Driver 2 on the Current Shift
+  const secondaryRouteCurrent = await prisma.route.create({
+    data: {
+      ward_id: wardEast.id,
+      vehicle_id: vehicles[1].id,
+      driver_id: drivers[1].id,
+      supervisor_id: supervisors[1].id,
+      shift: currentShift,
+      date: today,
+    },
+  });
+
+  for (const [index, society] of societies.slice(8, 12).entries()) {
+    await prisma.stop.create({
+      data: {
+        route_id: secondaryRouteCurrent.id,
+        society_id: society.id,
+        address: society.address,
+        lat: society.lat,
+        lng: society.lng,
+        bin_type: index % 2 === 0 ? "WET" : "DRY",
+        sequence_order: index + 1,
+        status: "PENDING",
+      },
+    });
+  }
+
   const assignedBacklog = await prisma.backlogEntry.create({
     data: {
       original_stop_id: historicalSkippedStop.id,
