@@ -30,22 +30,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Theme } from '../../theme/colors';
 import BigButton from '../../components/BigButton';
-
-// ─── Mock current route context ───────────────────────────────────────────────
-
-const CURRENT_STOP = {
-  society: 'Crystal Heights',
-  address: 'Worli Sea Face, Mumbai 400018',
-  lat:     19.0072,
-  lng:     72.8172,
-};
-
-const NEXT_STOP = {
-  society: 'Oceanic View',
-  address: 'Bandra West, Mumbai 400050',
-  lat:     19.0544,
-  lng:     72.8402,
-};
+import { useRouteStore } from '../../stores/routeStore';
 
 // ─── Map open helpers ─────────────────────────────────────────────────────────
 
@@ -80,7 +65,7 @@ function DestinationCard({
   isActive,
 }: {
   label:    string;
-  stop:     typeof CURRENT_STOP;
+  stop:     { society: string, address: string, lat: number, lng: number };
   isActive: boolean;
 }) {
   return (
@@ -128,6 +113,28 @@ const dcS = StyleSheet.create({
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
+  const { stops, route, vehicle } = useRouteStore();
+
+  const pendingStops = stops
+    .filter(s => s.status === 'PENDING' || s.status === 'IN_PROGRESS')
+    .sort((a, b) => a.sequence_order - b.sequence_order);
+  
+  const currentStopObj = pendingStops.find(s => s.status === 'IN_PROGRESS') ?? pendingStops[0] ?? null;
+  const nextStopObj = currentStopObj ? pendingStops.find(s => s.sequence_order > currentStopObj.sequence_order) ?? null : null;
+
+  const currentStopData = currentStopObj ? {
+    society: currentStopObj.society?.name ?? 'Unknown Society',
+    address: currentStopObj.address,
+    lat: currentStopObj.lat,
+    lng: currentStopObj.lng,
+  } : null;
+
+  const nextStopData = nextStopObj ? {
+    society: nextStopObj.society?.name ?? 'Unknown Society',
+    address: nextStopObj.address,
+    lat: nextStopObj.lat,
+    lng: nextStopObj.lng,
+  } : null;
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
@@ -140,7 +147,7 @@ export default function MapScreen() {
           </View>
           <View>
             <Text style={s.headerTitle}>Route Map</Text>
-            <Text style={s.headerSub}>TRUCK-4029 · Morning Shift</Text>
+            <Text style={s.headerSub}>{vehicle?.registration_no ?? 'TRUCK-XXXX'} · {route?.shift === 'AM' ? 'Morning Shift' : 'Evening Shift'}</Text>
           </View>
         </View>
       </View>
@@ -164,7 +171,7 @@ export default function MapScreen() {
         {/* ── Route summary ── */}
         <View style={s.summaryRow}>
           {[
-            { icon: 'git-branch-outline' as const, value: '26',     label: 'Stops Left' },
+            { icon: 'git-branch-outline' as const, value: String(pendingStops.length),     label: 'Stops Left' },
             { icon: 'navigate-outline'   as const, value: '18 km',  label: 'Est. Distance' },
             { icon: 'time-outline'       as const, value: '~2.5 hr',label: 'Est. Time' },
           ].map(item => (
@@ -178,29 +185,43 @@ export default function MapScreen() {
 
         {/* ── Current + next stop ── */}
         <Text style={s.sectionLabel}>CURRENT STOP</Text>
-        <DestinationCard label="In Progress" stop={CURRENT_STOP} isActive />
+        {currentStopData ? (
+          <DestinationCard label="In Progress" stop={currentStopData} isActive />
+        ) : (
+          <Text style={{ color: Colors.textSecondary, marginBottom: 16 }}>No active stop. You're all caught up!</Text>
+        )}
 
         <Text style={s.sectionLabel}>NEXT STOP</Text>
-        <DestinationCard label="Up Next" stop={NEXT_STOP} isActive={false} />
+        {nextStopData ? (
+          <DestinationCard label="Up Next" stop={nextStopData} isActive={false} />
+        ) : (
+          <Text style={{ color: Colors.textSecondary, marginBottom: 16 }}>No upcoming stops.</Text>
+        )}
 
         {/* ── Navigation CTAs ── */}
         <Text style={s.sectionLabel}>OPEN NAVIGATION</Text>
 
-        <BigButton
-          label="Open in Google Maps"
-          icon="navigate"
-          onPress={() => openGoogleMaps(CURRENT_STOP.lat, CURRENT_STOP.lng, CURRENT_STOP.society)}
-          variant="primary"
-        />
+        {currentStopData ? (
+          <>
+            <BigButton
+              label="Open in Google Maps"
+              icon="navigate"
+              onPress={() => openGoogleMaps(currentStopData.lat, currentStopData.lng, currentStopData.society)}
+              variant="primary"
+            />
 
-        <View style={s.spacer} />
+            <View style={s.spacer} />
 
-        <BigButton
-          label="Open in Waze"
-          icon="car"
-          onPress={() => openWaze(CURRENT_STOP.lat, CURRENT_STOP.lng)}
-          variant="dark"
-        />
+            <BigButton
+              label="Open in Waze"
+              icon="car"
+              onPress={() => openWaze(currentStopData.lat, currentStopData.lng)}
+              variant="dark"
+            />
+          </>
+        ) : (
+          <Text style={{ color: Colors.textSecondary, marginBottom: 16 }}>Wait for a current stop to begin navigation.</Text>
+        )}
 
         {/* ── Disclaimer ── */}
         <View style={s.disclaimer}>
