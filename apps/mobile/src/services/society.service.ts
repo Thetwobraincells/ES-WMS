@@ -56,3 +56,11 @@ export async function submitComplaint(
   });
   return extractData<{ message: string }>(res);
 }
+
+/**
+ * Get fines for a society.
+ */
+export async function getSocietyFines(societyId: string): Promise<{ wallet_balance: number, fines: any[] }> {
+  const res = await api.get(`/societies/${societyId}/fines`);
+  return extractData<{ wallet_balance: number, fines: any[] }>(res);
+}

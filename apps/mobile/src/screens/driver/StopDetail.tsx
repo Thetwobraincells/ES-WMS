@@ -106,6 +106,11 @@ export default function StopDetail() {
     setSkipModalVisible(false);
     setSkipExpanded(false);
 
+    if (result.reason === 'WASTE_MIXED') {
+      navigation.navigate('CameraProof', { stopId, mode: 'skip_mixed' });
+      return;
+    }
+
     try {
       // Call real API
       await skipStop(stopId, result.reason as SkipReason, result.note);

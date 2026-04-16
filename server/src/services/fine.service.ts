@@ -13,14 +13,20 @@ export async function createFineForMixedWaste(
 ): Promise<void> {
   const defaultFineAmount = await getSetting("DEFAULT_FINE_AMOUNT");
 
-  await prisma.fineEvent.create({
+  // For demo purposes, we will auto-approve the fine so it updates the wallet immediately
+  const fine = await prisma.fineEvent.create({
     data: {
       society_id: societyId,
       stop_id: stopId,
       reason: `Waste not segregated (mixed waste detected). Driver: ${driverId}`,
       amount: defaultFineAmount,
-      status: FineStatus.PENDING,
+      status: FineStatus.APPROVED,
     },
+  });
+
+  await prisma.society.update({
+    where: { id: societyId },
+    data: { wallet_balance: { decrement: defaultFineAmount } },
   });
 
   console.log(

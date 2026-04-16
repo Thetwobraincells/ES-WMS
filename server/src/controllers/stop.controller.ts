@@ -173,6 +173,15 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
             vehicleId: stop.route.vehicle.registration_no,
             loadPercent: Math.round(loadPercent),
           });
+
+          await prisma.notification.create({
+            data: {
+              target_user_id: req.user!.userId,
+              title: "Skip Flagged",
+              body: `Your Truck Full claim was flagged. Current recorded load is ${Math.round(loadPercent)}%.`,
+              type: "FALSE_CLAIM_ALERT"
+            }
+          });
         }
       }
     }
@@ -187,6 +196,15 @@ export async function skipStop(req: Request, res: Response, next: NextFunction) 
     });
 
     const backlog = await createBacklogForSkippedStop(stopId, reason);
+
+    await prisma.notification.create({
+      data: {
+        target_user_id: req.user!.userId,
+        title: "Stop Skipped",
+        body: `Stop skipped. Reason: ${reason}. A backlog was generated.`,
+        type: "SKIP_ALERT"
+      }
+    });
 
     if (stop.society_id) {
       await notifySocietyOfSkip(stop.society_id, reason, backlog.expectedPickupAt);

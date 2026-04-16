@@ -307,12 +307,19 @@ export default function CameraProof() {
       }
 
       await uploadPhoto(stop.id, photo.uri, latestCoords.lat, latestCoords.lng);
-      await completeStop(stop.id);
+      
+      const mode = route.params?.mode ?? 'complete';
+      if (mode === 'skip_mixed') {
+        const skipStop = useRouteStore.getState().skipStop;
+        await skipStop(stop.id, 'WASTE_MIXED');
+        Alert.alert('Proof Saved', 'Proof of mixed waste saved. Stop Skipped.', [{ text: 'Great!' }]);
+      } else {
+        await completeStop(stop.id);
+        Alert.alert('Success', 'Proof of work saved. Stop marked as complete.', [{ text: 'Great!' }]);
+      }
 
       navigation.goBack();
       navigation.goBack();
-
-      Alert.alert('Success', 'Proof of work saved. Stop marked as complete.', [{ text: 'Great!' }]);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Could not upload photo. Please try again.';

@@ -16,7 +16,7 @@
  *   5. Empty state per filter
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -28,10 +28,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { format as formatDt, isToday, isYesterday } from 'date-fns';
 
 import { Colors, Theme } from '../../theme/colors';
 import StatusBadge from '../../components/StatusBadge';
 import { useAuthStore } from '../../stores/authStore';
+import { getMyNotifications, markNotificationRead } from '../../services/notification.service';
+import type { Notification as ApiNotification } from '../../types/api';
+import { getSocietyFines } from '../../services/society.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,81 +58,6 @@ interface NotificationEvent {
   skipReason?:   string;
   backlogDate?:  string;
 }
-
-// ─── Mock data ────────────────────────────────────────────────────────────────
-
-const MOCK_WALLET = {
-  balance:     8500,
-  totalFined:  1500,
-  totalPaid:   1000,
-};
-
-const MOCK_EVENTS: NotificationEvent[] = [
-  {
-    id: 'n-01', type: 'completed', read: true,
-    title: 'Pickup Completed',
-    subtitle: 'Wet + Dry waste collected by Ajay Sharma · TRUCK-4029',
-    timestamp: '09:44 AM', dateGroup: 'Today',
-  },
-  {
-    id: 'n-02', type: 'info', read: false,
-    title: 'Truck Nearby',
-    subtitle: 'TRUCK-4029 is 3 stops away — expected in 18 minutes',
-    timestamp: '08:55 AM', dateGroup: 'Today',
-  },
-  {
-    id: 'n-03', type: 'completed', read: true,
-    title: 'Pickup Completed',
-    subtitle: 'Wet waste collected · On time',
-    timestamp: '09:51 AM', dateGroup: 'Yesterday',
-  },
-  {
-    id: 'n-04', type: 'skipped', read: true,
-    title: 'Truck Skipped Your Society',
-    subtitle: 'Reason: Truck Full · Backlog scheduled for Apr 6',
-    timestamp: '10:02 AM', dateGroup: 'Yesterday',
-    skipReason: 'TRUCK_FULL', backlogDate: 'Apr 6',
-  },
-  {
-    id: 'n-05', type: 'fine', read: true,
-    title: 'Fine Issued — Mixed Waste',
-    subtitle: 'Wet and dry waste found mixed in the collection bin',
-    timestamp: '11:30 AM', dateGroup: 'Apr 5',
-    fineAmount: 500, fineStatus: 'pending', evidenceRef: 'PHOTO-4029-221',
-  },
-  {
-    id: 'n-06', type: 'warning', read: true,
-    title: 'Segregation Warning',
-    subtitle: 'This is your 2nd mixed waste notice this month',
-    timestamp: '11:31 AM', dateGroup: 'Apr 5',
-  },
-  {
-    id: 'n-07', type: 'complaint', read: true,
-    title: 'Complaint Resolved',
-    subtitle: 'Your missed pickup report (CMP-482031) was resolved',
-    timestamp: '03:15 PM', dateGroup: 'Apr 3',
-  },
-  {
-    id: 'n-08', type: 'fine', read: true,
-    title: 'Fine Paid — Mixed Waste',
-    subtitle: 'Payment of ₹500 deducted from society wallet',
-    timestamp: '09:00 AM', dateGroup: 'Apr 2',
-    fineAmount: 500, fineStatus: 'paid',
-  },
-  {
-    id: 'n-09', type: 'completed', read: true,
-    title: 'Pickup Completed',
-    subtitle: 'Dry waste collected · 4 min early',
-    timestamp: '09:28 AM', dateGroup: 'Apr 2',
-  },
-  {
-    id: 'n-10', type: 'skipped', read: true,
-    title: 'Truck Skipped Your Society',
-    subtitle: 'Reason: Waste Mixed — Segregate properly to avoid fines',
-    timestamp: '10:15 AM', dateGroup: 'Mar 30',
-    skipReason: 'WASTE_MIXED',
-  },
-];
 
 // ─── Event type config ────────────────────────────────────────────────────────
 
@@ -195,7 +124,7 @@ function FineDetail({ event }: { event: NotificationEvent }) {
       <TouchableOpacity style={fdS.trigger} onPress={toggle}>
         <Ionicons name="receipt-outline" size={13} color={Colors.textMuted} />
         <Text style={fdS.triggerText}>
-          ₹{event.fineAmount?.toLocaleString()} fine ·{' '}
+          ₹{event.fineAmount?.toLocaleString() || 500} fine ·{' '}
           <Text style={{ color: statusColor, fontWeight: '700' }}>{statusLabel}</Text>
         </Text>
         <Animated.View style={{
@@ -214,7 +143,7 @@ function FineDetail({ event }: { event: NotificationEvent }) {
         <View style={fdS.detailInner}>
           <View style={fdS.detailRow}>
             <Text style={fdS.detailKey}>Amount</Text>
-            <Text style={fdS.detailVal}>₹{event.fineAmount?.toLocaleString()}</Text>
+            <Text style={fdS.detailVal}>₹{event.fineAmount?.toLocaleString() || 500}</Text>
           </View>
           <View style={fdS.detailRow}>
             <Text style={fdS.detailKey}>Status</Text>
@@ -356,9 +285,9 @@ function FilterTabs({
           </Text>
           {counts[tab.key] > 0 && (
             <View style={[ftS.badge, active === tab.key && ftS.badgeActive]}>
-              <Text style={[ftS.badgeText, active === tab.key && ftS.badgeTextActive]}>
-                {counts[tab.key]}
-              </Text>
+               <Text style={[ftS.badgeText, active === tab.key && ftS.badgeTextActive]}>
+                 {counts[tab.key]}
+               </Text>
             </View>
           )}
         </TouchableOpacity>
@@ -404,13 +333,13 @@ const dgS = StyleSheet.create({
 
 // ─── Wallet card (Fines tab) ──────────────────────────────────────────────────
 
-function WalletCard() {
+function WalletCard({ balance = 8500, totalFined = 1500, totalPaid = 1000 }) {
   return (
     <View style={wS.card}>
       <View style={wS.row}>
         <View>
           <Text style={wS.label}>SOCIETY WALLET</Text>
-          <Text style={wS.balance}>₹{MOCK_WALLET.balance.toLocaleString()}</Text>
+          <Text style={wS.balance}>₹{balance.toLocaleString()}</Text>
         </View>
         <View style={wS.iconWrap}>
           <Ionicons name="wallet-outline" size={22} color={Colors.white} />
@@ -418,20 +347,20 @@ function WalletCard() {
       </View>
       <View style={wS.statsRow}>
         <View style={wS.stat}>
-          <Text style={wS.statVal}>₹{MOCK_WALLET.totalFined.toLocaleString()}</Text>
+          <Text style={wS.statVal}>₹{totalFined.toLocaleString()}</Text>
           <Text style={wS.statLabel}>Total Fined</Text>
         </View>
         <View style={wS.statDivider} />
         <View style={wS.stat}>
           <Text style={[wS.statVal, { color: Colors.green }]}>
-            ₹{MOCK_WALLET.totalPaid.toLocaleString()}
+            ₹{totalPaid.toLocaleString()}
           </Text>
           <Text style={wS.statLabel}>Total Paid</Text>
         </View>
         <View style={wS.statDivider} />
         <View style={wS.stat}>
           <Text style={[wS.statVal, { color: Colors.danger }]}>
-            ₹{(MOCK_WALLET.totalFined - MOCK_WALLET.totalPaid).toLocaleString()}
+            ₹{(totalFined - totalPaid).toLocaleString()}
           </Text>
           <Text style={wS.statLabel}>Outstanding</Text>
         </View>
@@ -465,6 +394,53 @@ export default function NotificationHistory() {
   const user   = useAuthStore(s => s.user);
 
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
+  const [events, setEvents] = useState<NotificationEvent[]>([]);
+  const [wallet, setWallet] = useState({ balance: 8500, totalFined: 1500, totalPaid: 1000 });
+
+  useEffect(() => {
+    const fetchData = async () => {
+        try {
+            const notifs = await getMyNotifications(1, 30);
+            
+            const mapped: NotificationEvent[] = notifs.map((n: ApiNotification) => {
+                let type: EventType = 'info';
+                if (n.type === 'ALERT') type = 'warning';
+                if (n.type === 'FINE') type = 'fine';
+                if (n.type === 'SUCCESS') type = 'completed';
+                
+                const d = new Date(n.sent_at);
+                const dateGroup = isToday(d) ? 'Today' : isYesterday(d) ? 'Yesterday' : formatDt(d, 'MMM dd');
+    
+                return {
+                    id: n.id,
+                    type,
+                    title: n.title,
+                    subtitle: n.body,
+                    timestamp: formatDt(d, 'hh:mm a'),
+                    dateGroup,
+                    read: n.read_at !== null,
+                    fineAmount: n.type === 'FINE' ? 500 : undefined,
+                    fineStatus: n.type === 'FINE' ? 'pending' : undefined
+                };
+            });
+            setEvents(mapped);
+
+            if (user?.society_id) {
+                const finesData = await getSocietyFines(user.society_id);
+                setWallet(prev => ({
+                    ...prev,
+                    balance: finesData.wallet_balance ?? 8500
+                }));
+            }
+        } catch(e) {
+            console.warn('Notification History sync error', e);
+        }
+    };
+
+    fetchData();
+    const pollId = setInterval(fetchData, 4000);
+    return () => clearInterval(pollId);
+  }, []);
 
   const filterFn = (e: NotificationEvent) => {
     if (activeFilter === 'pickups')  return e.type === 'completed' || e.type === 'skipped' || e.type === 'info';
@@ -473,14 +449,14 @@ export default function NotificationHistory() {
     return true;
   };
 
-  const filtered = MOCK_EVENTS.filter(filterFn);
-  const unreadCount = MOCK_EVENTS.filter(e => !e.read).length;
+  const filtered = events.filter(filterFn);
+  const unreadCount = events.filter(e => !e.read).length;
 
   const counts: Record<FilterTab, number> = {
-    all:      MOCK_EVENTS.length,
-    pickups:  MOCK_EVENTS.filter(e => ['completed','skipped','info'].includes(e.type)).length,
-    fines:    MOCK_EVENTS.filter(e => e.type === 'fine').length,
-    warnings: MOCK_EVENTS.filter(e => ['warning','fine'].includes(e.type)).length,
+    all:      events.length,
+    pickups:  events.filter(e => ['completed','skipped','info'].includes(e.type)).length,
+    fines:    events.filter(e => e.type === 'fine').length,
+    warnings: events.filter(e => ['warning','fine'].includes(e.type)).length,
   };
 
   // Group events by dateGroup
@@ -524,7 +500,7 @@ export default function NotificationHistory() {
         showsVerticalScrollIndicator={false}
       >
         {/* Wallet card for fines tab */}
-        {activeFilter === 'fines' && <WalletCard />}
+        {activeFilter === 'fines' && <WalletCard balance={wallet.balance} totalFined={wallet.totalFined} totalPaid={wallet.totalPaid} />}
 
         {grouped.length === 0 ? (
           <View style={s.empty}>

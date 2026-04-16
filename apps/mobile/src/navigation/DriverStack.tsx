@@ -39,7 +39,7 @@ import ProfileScreen from '../screens/shared/ProfileScreen';
 export type DriverRootStackParams = {
   DriverTabs:  undefined;
   StopDetail:  { stopId: string };
-  CameraProof: { stopId: string };
+  CameraProof: { stopId: string; mode?: 'complete' | 'skip_mixed' };
 };
 
 export type DriverTabParams = {

@@ -12,7 +12,7 @@
  * Static mock data for Phase 5. Phase 6 wires to FCM push + API.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -22,9 +22,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { format as formatDt, isToday, isYesterday } from 'date-fns';
 
 import { Colors, Theme } from '../../theme/colors';
 import StatusBadge from '../../components/StatusBadge';
+import { getMyNotifications, markNotificationRead } from '../../services/notification.service';
+import type { Notification as ApiNotification } from '../../types/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,41 +42,6 @@ interface DriverAlert {
   dateGroup: string;
   read:      boolean;
 }
-
-// ─── Mock alerts ──────────────────────────────────────────────────────────────
-
-const MOCK_ALERTS: DriverAlert[] = [
-  {
-    id: 'a-01', type: 'warning', read: false,
-    title: 'Skip Claim Flagged',
-    body: 'Your TRUCK_FULL skip at Sunset Towers was flagged. Load was 84% at time of claim. Supervisor has been notified.',
-    time: '08:42 AM', dateGroup: 'Today',
-  },
-  {
-    id: 'a-02', type: 'backlog', read: false,
-    title: 'New Backlog Stop Added',
-    body: 'Marine Residency (MR-307-C) has been reassigned to your route by Supervisor. It appears after stop #18.',
-    time: '09:15 AM', dateGroup: 'Today',
-  },
-  {
-    id: 'a-03', type: 'info', read: true,
-    title: 'Supervisor Note',
-    body: 'Reminder: Access Crystal Heights via Gate 4 only. Security requires BMC ID card — keep it visible.',
-    time: '07:55 AM', dateGroup: 'Today',
-  },
-  {
-    id: 'a-04', type: 'success', read: true,
-    title: 'Route Completed — Well Done',
-    body: 'Yesterday\'s route was completed at 100%. Zero skips recorded. Performance logged to your profile.',
-    time: '02:30 PM', dateGroup: 'Yesterday',
-  },
-  {
-    id: 'a-05', type: 'warning', read: true,
-    title: 'Geofence Validation Failed',
-    body: 'Photo for Sea Breeze CHS was submitted 73m from the stop. Supervisor has been asked to review.',
-    time: '10:04 AM', dateGroup: 'Yesterday',
-  },
-];
 
 // ─── Alert type config ────────────────────────────────────────────────────────
 
@@ -185,16 +153,57 @@ const ddS = StyleSheet.create({
 
 export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
-  const [alerts, setAlerts] = useState(MOCK_ALERTS);
+  const [alerts, setAlerts] = useState<DriverAlert[]>([]);
+
+  // Fetch alerts from backend
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const notifs = await getMyNotifications();
+        const mapped: DriverAlert[] = notifs.map((n: ApiNotification) => {
+            let type: AlertType = 'info';
+            if (n.type === 'ALERT') type = 'warning';
+            if (n.type === 'FINE') type = 'warning';
+
+            const d = new Date(n.sent_at);
+            const dateGroup = isToday(d) ? 'Today' : isYesterday(d) ? 'Yesterday' : formatDt(d, 'MMM dd');
+
+            return {
+                id: n.id,
+                type,
+                title: n.title,
+                body: n.body,
+                time: formatDt(d, 'hh:mm a'),
+                dateGroup,
+                read: n.read_at !== null
+            };
+        });
+        setAlerts(mapped);
+      } catch(e) {
+        console.warn('Failed to fetch driver alerts', e);
+      }
+    };
+    
+    fetchAlerts();
+    const pollId = setInterval(fetchAlerts, 4000);
+    return () => clearInterval(pollId);
+  }, []);
 
   const unreadCount = alerts.filter(a => !a.read).length;
 
-  const markRead = (id: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: true } : a));
+  const markRead = async (id: string) => {
+    try {
+        setAlerts(prev => prev.map(a => a.id === id ? { ...a, read: true } : a));
+        await markNotificationRead(id);
+    } catch(e) {}
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
+    const unread = alerts.filter(a => !a.read);
     setAlerts(prev => prev.map(a => ({ ...a, read: true })));
+    for (const u of unread) {
+        try { await markNotificationRead(u.id); } catch(e) {}
+    }
   };
 
   // Group by dateGroup

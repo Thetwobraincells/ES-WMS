@@ -245,6 +245,8 @@ const erS = StyleSheet.create({
   sub:     { fontSize: 11, color: Colors.textSecondary },
 });
 
+import { getSocietyStatus, getSocietyFines } from '../../services/society.service';
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function CitizenDashboard() {
@@ -255,6 +257,12 @@ export default function CitizenDashboard() {
   const headerFade = useRef(new Animated.Value(0)).current;
   const cardSlide  = useRef(new Animated.Value(24)).current;
 
+  // Real-time states
+  const [pickup, setPickup] = useState(MOCK_CITIZEN.pickup);
+  const [seg, setSeg] = useState(MOCK_CITIZEN.segregation);
+  const [wallet, setWallet] = useState(MOCK_CITIZEN.walletBalance);
+  const [pendingFines, setPendingFines] = useState(MOCK_CITIZEN.pendingFines);
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(headerFade, { toValue: 1, duration: 400, useNativeDriver: true }),
@@ -262,8 +270,45 @@ export default function CitizenDashboard() {
     ]).start();
   }, []);
 
-  const pickup = MOCK_CITIZEN.pickup;
-  const seg    = MOCK_CITIZEN.segregation;
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user?.society_id) return;
+      try {
+        const [statusData, finesData] = await Promise.all([
+          getSocietyStatus(user.society_id),
+          getSocietyFines(user.society_id)
+        ]);
+        
+        // Update pickup status if provided from backend
+        // We will default to mock data fields where backend fields are missing for demo visually layout completeness
+        let newStatus: PickupStatus = 'scheduled';
+        if (statusData.today?.status === 'COMPLETED') newStatus = 'completed';
+        if (statusData.today?.status === 'SKIPPED') newStatus = 'skipped';
+        if (statusData.today?.status === 'IN_PROGRESS') newStatus = 'arriving';
+        
+        setPickup(prev => ({
+          ...prev,
+          status: newStatus,
+          driverName: statusData.today?.driver_name || prev.driverName,
+        }));
+
+        setSeg(prev => ({
+          ...prev
+        }));
+
+        setWallet(finesData.wallet_balance ?? 8500);
+        setPendingFines(finesData.fines ? finesData.fines.filter(f => f.status === 'UNPAID').length : 0);
+
+      } catch (err) {
+        console.warn('Citizen Dashboard poll error:', err);
+      }
+    };
+
+    fetchData(); // Initial fetch
+    const pollId = setInterval(fetchData, 3000); // 3-second poll for real-time demo
+    return () => clearInterval(pollId);
+  }, [user?.society_id]);
+
   const cfg    = PICKUP_CONFIG[pickup.status];
 
   return (
@@ -414,14 +459,14 @@ export default function CitizenDashboard() {
         </View>
 
         {/* Fine warning if pending */}
-        {MOCK_CITIZEN.pendingFines > 0 && (
+        {pendingFines > 0 && (
           <TouchableOpacity
             style={s.fineWarning}
             onPress={() => navigation.navigate('NotificationsTab')}
           >
             <Ionicons name="warning" size={16} color={Colors.danger} />
             <Text style={s.fineWarningText}>
-              {MOCK_CITIZEN.pendingFines} unpaid fine · Wallet balance ₹{MOCK_CITIZEN.walletBalance.toLocaleString()}
+              {pendingFines} unpaid fine{pendingFines !== 1 ? 's' : ''} · Wallet balance ₹{wallet.toLocaleString()}
             </Text>
             <Ionicons name="chevron-forward" size={14} color={Colors.danger} />
           </TouchableOpacity>
