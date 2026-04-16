@@ -10,10 +10,10 @@ type BacklogTableProps = {
   onReassignOne: (id: string) => void;
 };
 
-function priorityClass(priority: BacklogPriority) {
-  if (priority === "HIGH") return "bg-red-100 text-red-700";
-  if (priority === "MEDIUM") return "bg-orange-100 text-orange-700";
-  return "bg-green-100 text-green-700";
+function priorityClass(score: number) {
+  if (score > 15) return { label: "HIGH", className: "bg-red-100 text-red-700 font-bold border-red-200" };
+  if (score > 10) return { label: "MEDIUM", className: "bg-orange-100 text-orange-700 font-medium border-orange-200" };
+  return { label: "LOW", className: "bg-green-100 text-green-700 font-medium border-green-200" };
 }
 
 export function BacklogTable({ items, selectedIds, onSelect, onSelectAll, onReassignOne }: BacklogTableProps) {
@@ -38,7 +38,8 @@ export function BacklogTable({ items, selectedIds, onSelect, onSelectAll, onReas
           </thead>
           <tbody>
             {items.map((item) => {
-              const priority = item.priority ?? "LOW";
+              const score = item.priority?.urgency_score ?? 0;
+              const pill = priorityClass(score);
               return (
                 <tr key={item.id} className="border-t border-gray-100">
                   <td className="px-4 py-3">
@@ -48,12 +49,12 @@ export function BacklogTable({ items, selectedIds, onSelect, onSelectAll, onReas
                       onChange={(e) => onSelect(item.id, e.target.checked)}
                     />
                   </td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{item.id}</td>
+                  <td className="px-4 py-3 font-medium text-gray-900">{item.id.slice(0, 8)}...</td>
                   <td className="px-4 py-3 text-gray-700">{item.original_stop_id}</td>
                   <td className="px-4 py-3 text-gray-700">{item.reason}</td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${priorityClass(priority)}`}>
-                      {priority}
+                    <span className={`rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-wider ${pill.className}`}>
+                      {pill.label} ({score})
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{item.status}</td>

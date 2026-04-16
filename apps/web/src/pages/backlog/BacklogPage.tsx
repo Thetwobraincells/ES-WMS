@@ -6,10 +6,9 @@ import { getBacklogs, reassignBacklog, type BacklogItem } from "@/services/backl
 import { getRoutes, type RouteRecord } from "@/services/route.service";
 import { RefreshCw } from "lucide-react";
 
-function priorityRank(priority?: string) {
-  if (priority === "HIGH") return 0;
-  if (priority === "MEDIUM") return 1;
-  return 2;
+function priorityRank(priority?: import("@/services/backlog.service").BacklogPriority) {
+  if (!priority) return 0;
+  return priority.urgency_score;
 }
 
 export function BacklogPage() {
@@ -40,7 +39,7 @@ export function BacklogPage() {
   }, []);
 
   const sortedItems = useMemo(
-    () => [...items].sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority)),
+    () => [...items].sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority)),
     [items],
   );
 

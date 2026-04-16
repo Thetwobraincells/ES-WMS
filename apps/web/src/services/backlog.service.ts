@@ -1,6 +1,9 @@
 import { apiRequest } from "@/services/api";
 
-export type BacklogPriority = "HIGH" | "MEDIUM" | "LOW";
+export type BacklogPriority = {
+  missed_count: number;
+  urgency_score: number;
+};
 
 export type BacklogItem = {
   id: string;
