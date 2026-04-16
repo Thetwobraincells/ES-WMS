@@ -6,6 +6,7 @@ import { DashboardMap } from "@/components/dashboard/DashboardMap";
 import { VehicleDetailPanel } from "@/components/dashboard/VehicleDetailPanel";
 import { getLiveVehicles, type LiveVehicle } from "@/services/vehicle.service";
 import { getStops, type MapStop } from "@/services/stop.service";
+import { getDashboardSummary, type DashboardSummary } from "@/services/admin.service";
 
 const statCards = [
   { key: "vehicles", label: "Active Vehicles", icon: Truck, gradient: "stat-card-1", color: "text-brand-700" },
@@ -45,6 +46,7 @@ function StatCard({
 export function DashboardPage() {
   const [vehicles, setVehicles] = useState<LiveVehicle[]>([]);
   const [stops, setStops] = useState<MapStop[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [showStops, setShowStops] = useState(false);
   const [centerOnUser, setCenterOnUser] = useState(false);
@@ -59,9 +61,14 @@ export function DashboardPage() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const [liveVehicles, stopList] = await Promise.all([getLiveVehicles(), getStops()]);
+      const [liveVehicles, stopList, dashboardSummary] = await Promise.all([
+        getLiveVehicles(),
+        getStops(),
+        getDashboardSummary(),
+      ]);
       setVehicles(liveVehicles);
       setStops(stopList);
+      setSummary(dashboardSummary);
       if (!selectedVehicleId && liveVehicles.length > 0) {
         setSelectedVehicleId(liveVehicles[0].id);
       }
@@ -81,7 +88,7 @@ export function DashboardPage() {
     return () => window.clearInterval(timer);
   }, [fetchData]);
 
-  const activeVehicles = vehicles.filter((v) => v.position).length;
+  const activeVehicles = summary ? summary.vehicles.active : vehicles.filter((v) => v.position).length;
   const fullOrHalted = vehicles.filter((v) => {
     const status = v.status.toLowerCase();
     return status.includes("full") || status.includes("halt");
@@ -90,11 +97,14 @@ export function DashboardPage() {
     ? `${Math.round(vehicles.reduce((acc, v) => acc + v.load_percent, 0) / vehicles.length)}%`
     : "0%";
 
+  // Determine critical alerts: backlogs + fines, or fallback to full/halted
+  const criticalAlerts = summary ? summary.backlogs.pending + summary.fines.pending : fullOrHalted;
+
   const metrics: Record<string, string> = {
     vehicles: `${activeVehicles}`,
     load: averageLoad,
-    alerts: `${fullOrHalted}`,
-    stops: `${stops.length}`,
+    alerts: `${criticalAlerts}`,
+    stops: summary ? `${summary.stops.total}` : `${stops.length}`,
   };
 
   return (
