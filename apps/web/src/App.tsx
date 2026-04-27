@@ -4,6 +4,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { UsersPage } from "@/pages/users/UsersPage";
 import { RoutesPage } from "@/pages/routes/RoutesPage";
+import { RouteDetailPage } from "@/pages/routes/RouteDetailPage";
 import { BacklogPage } from "@/pages/backlog/BacklogPage";
 import { FinesPage } from "@/pages/fines/FinesPage";
 import { AlertsPage } from "@/pages/alerts/AlertsPage";
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/routes" element={<RoutesPage />} />
+            <Route path="/routes/:id" element={<RouteDetailPage />} />
             <Route path="/backlog" element={<BacklogPage />} />
             <Route path="/fines" element={<FinesPage />} />
             <Route path="/alerts" element={<AlertsPage />} />

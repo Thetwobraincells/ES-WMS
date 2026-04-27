@@ -193,15 +193,21 @@ export default function RouteOverview() {
   const user       = useAuthStore(s => s.user);
 
   // ── Route store ───────────────────────────────────────────────────────────
-  const { stops, progress, vehicle, route, isLoading, error, fetchMyRoute } = useRouteStore();
+  const {
+    stops, progress, vehicle, route, isLoading, error,
+    fetchMyRoute, startPolling, stopPolling,
+    routeUpdatedByAdmin, dismissRouteUpdate,
+  } = useRouteStore();
 
   const [tipVisible, setTipVisible] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [ecoTip]     = useState(() => ECO_TIPS[Math.floor(Math.random() * ECO_TIPS.length)]);
 
-  // Fetch route on mount
+  // Fetch route on mount + start auto-polling (30s)
   useEffect(() => {
     fetchMyRoute();
+    startPolling();
+    return () => stopPolling();
   }, []);
 
   // Pull-to-refresh
@@ -283,6 +289,22 @@ export default function RouteOverview() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.green} />
         }>
+
+        {/* ── Admin Route Update Banner ── */}
+        {routeUpdatedByAdmin && (
+          <View style={s.updateBanner}>
+            <View style={s.updateBannerLeft}>
+              <Ionicons name="refresh-circle" size={22} color={Colors.white} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.updateBannerTitle}>Route Updated</Text>
+                <Text style={s.updateBannerText}>Your route was modified by the admin. Showing latest stops.</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={dismissRouteUpdate} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={18} color={Colors.white} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ── Progress Card ── */}
         <View style={s.card}>
@@ -469,4 +491,14 @@ const s = StyleSheet.create({
   mapCta:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
               gap: 8, backgroundColor: Colors.surface, paddingVertical: 14 },
   mapCtaText:{ fontSize: 13, fontWeight: '700', color: Colors.textPrimary, letterSpacing: 0.8 },
+
+  // Admin route update banner
+  updateBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#1B5E20', borderRadius: Theme.radiusMd,
+    padding: 14, gap: 10,
+  },
+  updateBannerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 },
+  updateBannerTitle: { fontSize: 14, fontWeight: '800', color: Colors.white },
+  updateBannerText:  { fontSize: 11, color: 'rgba(255,255,255,0.8)', lineHeight: 16 },
 });

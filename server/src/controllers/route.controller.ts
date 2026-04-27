@@ -28,7 +28,18 @@ export const createRouteSchema = z.object({
   stops: z.array(routeStopSchema).optional(),
 }).passthrough();
 
-export const updateRouteSchema = createRouteSchema.partial();
+export const updateRouteSchema = createRouteSchema.partial().extend({
+  deleteStopIds: z.array(z.string().uuid()).optional(),
+});
+
+export const addStopSchema = z.object({
+  society_id: z.string().uuid().nullable().optional(),
+  address: z.string().min(3).max(255),
+  lat: z.number(),
+  lng: z.number(),
+  bin_type: z.enum(["WET", "DRY", "MIXED"]),
+  sequence_order: z.number().int().positive(),
+});
 
 function buildRouteIncludes() {
   return {
@@ -354,7 +365,7 @@ export async function createRoute(req: Request, res: Response, next: NextFunctio
 export async function updateRoute(req: Request, res: Response, next: NextFunction) {
   try {
     const routeId = getSingleValue(req.params.id)!;
-    const { stops, ...data } = req.body as z.infer<typeof updateRouteSchema>;
+    const { stops, deleteStopIds, ...data } = req.body as z.infer<typeof updateRouteSchema>;
     const old = await prisma.route.findUniqueOrThrow({
       where: { id: routeId },
       include: {
@@ -376,6 +387,17 @@ export async function updateRoute(req: Request, res: Response, next: NextFunctio
         ...(data.is_active !== undefined ? { is_active: data.is_active } : {}),
       },
     });
+
+    // Delete stops that admin removed
+    if (deleteStopIds?.length) {
+      await prisma.stop.deleteMany({
+        where: {
+          id: { in: deleteStopIds },
+          route_id: routeId,
+          status: "PENDING", // Only delete pending stops (safety)
+        },
+      });
+    }
 
     if (stops?.length) {
       await upsertRouteStops(routeId, stops);
@@ -566,6 +588,93 @@ export async function deleteRoute(req: Request, res: Response, next: NextFunctio
     });
 
     sendSuccess(res, { id: routeId });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/v1/routes/:id/stops
+ * Add a new stop to an existing route.
+ */
+export async function addStopToRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    const routeId = getSingleValue(req.params.id)!;
+    const body = req.body as z.infer<typeof addStopSchema>;
+
+    // Verify route exists
+    await prisma.route.findUniqueOrThrow({ where: { id: routeId } });
+
+    const stop = await prisma.stop.create({
+      data: {
+        route_id: routeId,
+        society_id: body.society_id ?? null,
+        address: body.address,
+        lat: body.lat,
+        lng: body.lng,
+        bin_type: body.bin_type,
+        sequence_order: body.sequence_order,
+      },
+      include: {
+        society: true,
+      },
+    });
+
+    await logAudit({
+      actorId: req.user!.userId,
+      action: "ADD_STOP",
+      entityType: "Stop",
+      entityId: stop.id,
+      newValue: body,
+    });
+
+    sendCreated(res, stop);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/v1/routes/:id/stops/:stopId
+ * Remove a stop from a route.
+ */
+export async function removeStopFromRoute(req: Request, res: Response, next: NextFunction) {
+  try {
+    const routeId = getSingleValue(req.params.id)!;
+    const stopId = getSingleValue(req.params.stopId)!;
+
+    const stop = await prisma.stop.findFirst({
+      where: { id: stopId, route_id: routeId },
+    });
+
+    if (!stop) {
+      sendError(res, "Stop not found on this route.", 404, "STOP_NOT_FOUND");
+      return;
+    }
+
+    await prisma.stop.delete({ where: { id: stopId } });
+
+    // Re-sequence remaining stops
+    const remaining = await prisma.stop.findMany({
+      where: { route_id: routeId },
+      orderBy: { sequence_order: "asc" },
+    });
+    for (let i = 0; i < remaining.length; i++) {
+      await prisma.stop.update({
+        where: { id: remaining[i].id },
+        data: { sequence_order: i + 1 },
+      });
+    }
+
+    await logAudit({
+      actorId: req.user!.userId,
+      action: "REMOVE_STOP",
+      entityType: "Stop",
+      entityId: stopId,
+      oldValue: stop as unknown as Record<string, unknown>,
+    });
+
+    sendSuccess(res, { id: stopId });
   } catch (err) {
     next(err);
   }
