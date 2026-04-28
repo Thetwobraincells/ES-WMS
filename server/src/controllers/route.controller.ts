@@ -577,7 +577,25 @@ export async function deleteRoute(req: Request, res: Response, next: NextFunctio
     const routeId = getSingleValue(req.params.id)!;
     const old = await prisma.route.findUniqueOrThrow({ where: { id: routeId } });
 
-    await prisma.route.delete({ where: { id: routeId } });
+    await prisma.$transaction(async (tx) => {
+      const stops = await tx.stop.findMany({ where: { route_id: routeId }, select: { id: true } });
+      const stopIds = stops.map(s => s.id);
+
+      if (stopIds.length > 0) {
+        await tx.stopPhoto.deleteMany({ where: { stop_id: { in: stopIds } } });
+        await tx.backlogEntry.deleteMany({ where: { original_stop_id: { in: stopIds } } });
+        await tx.fineEvent.deleteMany({ where: { stop_id: { in: stopIds } } });
+      }
+      
+      // Detach backlogs where this route is the new_route
+      await tx.backlogEntry.updateMany({
+        where: { new_route_id: routeId },
+        data: { new_route_id: null, status: "PENDING" },
+      });
+
+      await tx.stop.deleteMany({ where: { route_id: routeId } });
+      await tx.route.delete({ where: { id: routeId } });
+    });
 
     await logAudit({
       actorId: req.user!.userId,

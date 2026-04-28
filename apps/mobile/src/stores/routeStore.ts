@@ -102,12 +102,24 @@ export const useRouteStore = create<RouteState>()((set, get) => ({
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to fetch route';
-      const axiosMessage = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error;
-      set({
-        isLoading: false,
-        error: axiosMessage ?? message,
-      });
+      const axiosError = err as { response?: { status?: number, data?: { error?: string } } };
+      const axiosMessage = axiosError?.response?.data?.error;
+      
+      if (axiosError?.response?.status === 404) {
+        set({
+          isLoading: false,
+          route: null,
+          stops: [],
+          progress: null,
+          vehicle: null,
+          error: axiosMessage ?? message,
+        });
+      } else {
+        set({
+          isLoading: false,
+          error: axiosMessage ?? message,
+        });
+      }
     }
   },
 
